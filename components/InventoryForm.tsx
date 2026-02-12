@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { InventoryItem } from '../types';
-import { CATEGORIES } from '../constants';
+import { InventoryItem } from '../types.ts';
+import { CATEGORIES } from '../constants.tsx';
 
 interface InventoryFormProps {
   onAdd: (item: InventoryItem) => void;
@@ -14,9 +14,9 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
     category: CATEGORIES[0],
     sku: '',
     stockLevel: '',
-    unitCost: '', // Purchasing Price
-    retailPrice: '', // Listing Price
-    bankSettledAmount: '', // Amount received in bank
+    unitCost: '',
+    retailPrice: '',
+    bankSettledAmount: '',
     minStockLevel: '5'
   });
 
@@ -107,7 +107,6 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
 
           <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
             <label className="block text-sm font-bold text-indigo-700 mb-1">Bank Settled Amount (₹)</label>
-            <p className="text-[10px] text-indigo-500 mb-2">Net amount received in your bank after platform deductions.</p>
             <input
               required
               type="number"
@@ -117,29 +116,6 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
               value={formData.bankSettledAmount}
               onChange={e => setFormData({...formData, bankSettledAmount: e.target.value})}
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Stock Level</label>
-              <input
-                required
-                type="number"
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={formData.stockLevel}
-                onChange={e => setFormData({...formData, stockLevel: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Min. Stock Alert</label>
-              <input
-                required
-                type="number"
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={formData.minStockLevel}
-                onChange={e => setFormData({...formData, minStockLevel: e.target.value})}
-              />
-            </div>
           </div>
 
           <div className="pt-4 flex gap-3">

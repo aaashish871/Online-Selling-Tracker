@@ -1,6 +1,6 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Order, InventoryItem } from "../types";
+import { Order, InventoryItem } from "../types.ts";
 
 // Configured with your provided Supabase credentials
 const supabaseUrl = 'https://yvugbgjrakdcgirxpcvi.supabase.co';
@@ -32,7 +32,7 @@ export const dbService = {
 
     if (error) {
       console.error("Error fetching inventory:", error.message);
-      throw error; // Propagate error so UI can detect missing tables
+      throw error; 
     }
     return data as InventoryItem[];
   },
@@ -73,7 +73,7 @@ export const dbService = {
 
     if (error) {
       console.error("Error fetching orders:", error.message);
-      throw error; // Propagate error so UI can detect missing tables
+      throw error;
     }
     return data as Order[];
   },

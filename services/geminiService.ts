@@ -1,16 +1,16 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { Order } from "../types";
+import { Order } from "../types.ts";
 
 export const getAIAnalysis = async (orders: Order[]) => {
-  // Use API key directly from environment and follow named parameter requirement
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Safety check for environment variable access
+  const apiKey = typeof process !== 'undefined' ? (process.env.API_KEY || '') : '';
+  const ai = new GoogleGenAI({ apiKey: apiKey as string });
   
   const orderSummary = orders.map(o => ({
     name: o.productName,
     cat: o.category,
     list: o.listingPrice,
-    // Fixed: 'sellingPrice' property does not exist on Order type; using 'settledAmount' instead
     sell: o.settledAmount,
     profit: o.profit
   }));
@@ -38,13 +38,11 @@ export const getAIAnalysis = async (orders: Order[]) => {
       contents: prompt,
       config: {
         temperature: 0.7,
-        // Set both maxOutputTokens and thinkingBudget together as per guidelines
         maxOutputTokens: 500,
         thinkingConfig: { thinkingBudget: 200 }
       }
     });
 
-    // Directly access text property from response
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("AI Analysis Error:", error);

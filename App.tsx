@@ -1,12 +1,12 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Order, InventoryItem, MonthlyReport } from './types';
-import { INITIAL_STATUSES } from './constants';
-import StatsCard from './components/StatsCard';
-import OrderForm from './components/OrderForm';
-import InventoryForm from './components/InventoryForm';
-import { getAIAnalysis } from './services/geminiService';
-import { dbService } from './services/dbService';
+import { Order, InventoryItem, MonthlyReport } from './types.ts';
+import { INITIAL_STATUSES } from './constants.tsx';
+import StatsCard from './components/StatsCard.tsx';
+import OrderForm from './components/OrderForm.tsx';
+import InventoryForm from './components/InventoryForm.tsx';
+import { getAIAnalysis } from './services/geminiService.ts';
+import { dbService } from './services/dbService.ts';
 import { 
   BarChart, 
   Bar, 
@@ -52,7 +52,7 @@ const App: React.FC = () => {
         setIsTableMissing(false);
       } catch (error: any) {
         console.error("Database connection failed", error);
-        if (error.message?.includes('Could not find the table')) {
+        if (error.message?.includes('Could not find the table') || error.message?.includes('relation') || error.message?.includes('404')) {
           setIsTableMissing(true);
         }
       } finally {
