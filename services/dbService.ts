@@ -49,6 +49,19 @@ export const dbService = {
     }
   },
 
+  async updateInventoryItem(item: InventoryItem): Promise<void> {
+    if (!supabase) throw new Error("Supabase is not configured.");
+    
+    const { error } = await supabase
+      .from('osot_inventory')
+      .update(item)
+      .eq('id', item.id);
+
+    if (error) {
+      throw new Error(`Failed to update inventory: ${error.message}`);
+    }
+  },
+
   async deleteInventoryItem(id: string): Promise<void> {
     if (!supabase) throw new Error("Supabase is not configured.");
     

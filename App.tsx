@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [statuses, setStatuses] = useState<string[]>(INITIAL_STATUSES);
   
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [aiInsights, setAiInsights] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -169,8 +170,20 @@ const App: React.FC = () => {
     }
   };
 
+  const updateInventoryItem = async (item: InventoryItem) => {
+    if (!isDbConfigured) return;
+    setIsSyncing(true);
+    try {
+      await dbService.updateInventoryItem(item);
+      setInventory(inventory.map(i => i.id === item.id ? item : i));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const deleteInventoryItem = async (id: string) => {
     if (!isDbConfigured) return;
+    if (!confirm('Are you sure you want to delete this product?')) return;
     setIsSyncing(true);
     try {
       await dbService.deleteInventoryItem(id);
@@ -178,6 +191,16 @@ const App: React.FC = () => {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleEditInventory = (item: InventoryItem) => {
+    setEditingItem(item);
+    setIsInvFormOpen(true);
+  };
+
+  const handleCloseInvForm = () => {
+    setIsInvFormOpen(false);
+    setEditingItem(null);
   };
 
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -245,7 +268,7 @@ const App: React.FC = () => {
               <h2 className="text-3xl font-black text-slate-800 tracking-tight">Database Tables Missing</h2>
               <p className="text-slate-500 max-w-lg mx-auto leading-relaxed">
                 {isTableMissing 
-                  ? "We connected to your Supabase, but the 'osot_orders' and 'osot_inventory' tables were not found."
+                  ? "We connected to your Supabase, but the 'osot_inventory' and 'osot_orders' tables were not found."
                   : "To start tracking, connect your Supabase database by setting environment variables."}
               </p>
             </div>
@@ -415,9 +438,11 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
 
             {view === 'inventory' && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-                  <h3 className="text-lg font-bold">Inventory Catalog</h3>
-                  <p className="text-xs text-slate-400 mt-1">Configure your product purchasing and bank settlement values here.</p>
+                <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold">Inventory Catalog</h3>
+                    <p className="text-xs text-slate-400 mt-1">Configure your product purchasing and bank settlement values here.</p>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -432,28 +457,47 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {inventory.map(item => (
-                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <strong>{item.name}</strong><br/>
-                            <span className="text-[10px] text-slate-400 font-mono tracking-tighter">SKU: {item.sku} | Website: ₹{item.retailPrice}</span>
-                          </td>
-                          <td className="px-6 py-4 text-rose-500 font-medium italic">₹{item.unitCost.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-indigo-600 font-bold">₹{item.bankSettledAmount.toFixed(2)}</td>
-                          <td className="px-6 py-4">
-                            <div className="font-bold text-emerald-600">₹{(item.bankSettledAmount - item.unitCost).toFixed(2)}</div>
-                            <div className="text-[9px] text-slate-400 uppercase font-black">Margin: {(((item.bankSettledAmount - item.unitCost) / item.bankSettledAmount) * 100).toFixed(1)}%</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${item.stockLevel < item.minStockLevel ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-600'}`}>
-                              {item.stockLevel} units
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button onClick={() => deleteInventoryItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors">✕</button>
-                          </td>
-                        </tr>
-                      ))}
+                      {inventory.length === 0 ? (
+                        <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">No products in inventory yet.</td></tr>
+                      ) : (
+                        inventory.map(item => (
+                          <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                            <td className="px-6 py-4">
+                              <strong className="text-slate-700">{item.name}</strong><br/>
+                              <span className="text-[10px] text-slate-400 font-mono tracking-tighter">SKU: {item.sku} | Website: ₹{item.retailPrice}</span>
+                            </td>
+                            <td className="px-6 py-4 text-rose-500 font-medium italic">₹{item.unitCost.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-indigo-600 font-bold">₹{item.bankSettledAmount.toFixed(2)}</td>
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-emerald-600">₹{(item.bankSettledAmount - item.unitCost).toFixed(2)}</div>
+                              <div className="text-[9px] text-slate-400 uppercase font-black">Margin: {(((item.bankSettledAmount - item.unitCost) / (item.bankSettledAmount || 1)) * 100).toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${item.stockLevel < item.minStockLevel ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-600'}`}>
+                                {item.stockLevel} units
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => handleEditInventory(item)} 
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                  title="Edit Item"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button 
+                                  onClick={() => deleteInventoryItem(item.id)} 
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                  title="Delete Item"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -554,7 +598,14 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
         </div>
       </footer>
 
-      {isInvFormOpen && <InventoryForm onAdd={addInventoryItem} onClose={() => setIsInvFormOpen(false)} />}
+      {isInvFormOpen && (
+        <InventoryForm 
+          onAdd={addInventoryItem} 
+          onUpdate={updateInventoryItem}
+          onClose={handleCloseInvForm} 
+          initialData={editingItem}
+        />
+      )}
     </div>
   );
 };

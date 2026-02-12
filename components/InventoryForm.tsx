@@ -1,14 +1,16 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { InventoryItem } from '../types.ts';
 import { CATEGORIES } from '../constants.tsx';
 
 interface InventoryFormProps {
   onAdd: (item: InventoryItem) => void;
+  onUpdate: (item: InventoryItem) => void;
   onClose: () => void;
+  initialData?: InventoryItem | null;
 }
 
-const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
+const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose, initialData }) => {
   const [formData, setFormData] = useState({
     name: '',
     category: CATEGORIES[0],
@@ -20,10 +22,25 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
     minStockLevel: '5'
   });
 
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        name: initialData.name,
+        category: initialData.category,
+        sku: initialData.sku,
+        stockLevel: initialData.stockLevel.toString(),
+        unitCost: initialData.unitCost.toString(),
+        retailPrice: initialData.retailPrice.toString(),
+        bankSettledAmount: initialData.bankSettledAmount.toString(),
+        minStockLevel: initialData.minStockLevel.toString()
+      });
+    }
+  }, [initialData]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newItem: InventoryItem = {
-      id: `INV-${Math.floor(Math.random() * 10000)}`,
+    const item: InventoryItem = {
+      id: initialData?.id || `INV-${Math.floor(Math.random() * 10000)}`,
       name: formData.name,
       category: formData.category,
       sku: formData.sku,
@@ -33,7 +50,12 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
       bankSettledAmount: parseFloat(formData.bankSettledAmount) || 0,
       minStockLevel: parseInt(formData.minStockLevel) || 0,
     };
-    onAdd(newItem);
+
+    if (initialData) {
+      onUpdate(item);
+    } else {
+      onAdd(item);
+    }
     onClose();
   };
 
@@ -41,7 +63,9 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-slate-800">Add New Product</h2>
+          <h2 className="text-xl font-bold text-slate-800">
+            {initialData ? 'Update Inventory Item' : 'Add New Product'}
+          </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -118,6 +142,29 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Current Stock</label>
+              <input
+                required
+                type="number"
+                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                value={formData.stockLevel}
+                onChange={e => setFormData({...formData, stockLevel: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Min. Alert Level</label>
+              <input
+                required
+                type="number"
+                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                value={formData.minStockLevel}
+                onChange={e => setFormData({...formData, minStockLevel: e.target.value})}
+              />
+            </div>
+          </div>
+
           <div className="pt-4 flex gap-3">
             <button
               type="button"
@@ -130,7 +177,7 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onClose }) => {
               type="submit"
               className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
             >
-              Add to Inventory
+              {initialData ? 'Update Item' : 'Add to Inventory'}
             </button>
           </div>
         </form>
