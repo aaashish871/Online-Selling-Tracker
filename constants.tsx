@@ -1,5 +1,5 @@
 
-import { Order, InventoryItem } from './types';
+import { Order, InventoryItem } from './types.ts';
 
 export const INITIAL_STATUSES = [
   'Pending',
