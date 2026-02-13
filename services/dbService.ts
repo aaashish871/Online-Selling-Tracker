@@ -103,6 +103,19 @@ export const dbService = {
     }
   },
 
+  async updateOrder(order: Order): Promise<void> {
+    if (!supabase) throw new Error("Supabase is not configured.");
+    
+    const { error } = await supabase
+      .from('osot_orders')
+      .update(order)
+      .eq('id', order.id);
+
+    if (error) {
+      throw new Error(`Failed to update order status: ${error.message}`);
+    }
+  },
+
   async deleteOrder(id: string): Promise<void> {
     if (!supabase) throw new Error("Supabase is not configured.");
     

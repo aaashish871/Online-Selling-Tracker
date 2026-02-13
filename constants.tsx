@@ -2,12 +2,16 @@
 import { Order, InventoryItem } from './types.ts';
 
 export const INITIAL_STATUSES = [
-  'Pending',
-  'Processing',
+  'Order Received',
+  'Order Accepted',
+  'Prepared',
+  'Order Packed',
+  'Ready for Shipment',
   'Shipped',
-  'Completed',
-  'Cancelled',
-  'Returned'
+  'Delivered',
+  'Settled',
+  'Returned',
+  'Cancelled'
 ];
 
 export const INITIAL_ORDERS: Order[] = [
@@ -20,7 +24,7 @@ export const INITIAL_ORDERS: Order[] = [
     listingPrice: 199.99,
     settledAmount: 180.00,
     profit: 60.00,
-    status: 'Completed',
+    status: 'Order Received',
   }
 ];
 

@@ -1,6 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
 import { InventoryItem } from '../types.ts';
-import { CATEGORIES } from '../constants.tsx';
 
 interface InventoryFormProps {
   onAdd: (item: InventoryItem) => void;
@@ -8,12 +8,13 @@ interface InventoryFormProps {
   onClose: () => void;
   initialData?: InventoryItem | null;
   inventory: InventoryItem[];
+  categories: string[];
 }
 
-const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose, initialData, inventory }) => {
+const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose, initialData, inventory, categories }) => {
   const [formData, setFormData] = useState({
     name: '',
-    category: CATEGORIES[0],
+    category: categories[0] || '',
     sku: '',
     stockLevel: '',
     unitCost: '',
@@ -39,7 +40,7 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
 
       setFormData({
         name: initialData.name || '',
-        category: initialData.category || CATEGORIES[0],
+        category: initialData.category || categories[0] || '',
         sku: initialData.sku || '',
         stockLevel: (getVal(initialData, 'stockLevel') ?? '').toString(),
         unitCost: (getVal(initialData, 'unitCost') ?? '').toString(),
@@ -50,7 +51,7 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
     } else {
       setFormData({
         name: '',
-        category: CATEGORIES[0],
+        category: categories[0] || '',
         sku: '',
         stockLevel: '',
         unitCost: '',
@@ -60,7 +61,7 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
       });
     }
     setError(null);
-  }, [initialData]);
+  }, [initialData, categories]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,7 +154,11 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
                 value={formData.category}
                 onChange={e => setFormData({...formData, category: e.target.value})}
               >
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.length > 0 ? (
+                  categories.map(c => <option key={c} value={c}>{c}</option>)
+                ) : (
+                  <option value="" disabled>No categories defined</option>
+                )}
               </select>
             </div>
           </div>

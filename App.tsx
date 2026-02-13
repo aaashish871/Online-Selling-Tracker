@@ -1,6 +1,7 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Order, InventoryItem, MonthlyReport } from './types.ts';
-import { INITIAL_STATUSES } from './constants.tsx';
+import { INITIAL_STATUSES, CATEGORIES } from './constants.tsx';
 import StatsCard from './components/StatsCard.tsx';
 import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
@@ -17,13 +18,14 @@ import {
   Cell
 } from 'recharts';
 
-type ViewMode = 'dashboard' | 'inventory' | 'reports' | 'settings';
+type ViewMode = 'dashboard' | 'orders' | 'inventory' | 'reports' | 'settings';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewMode>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [statuses, setStatuses] = useState<string[]>(INITIAL_STATUSES);
+  const [categories, setCategories] = useState<string[]>(CATEGORIES);
   
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -71,6 +73,16 @@ const App: React.FC = () => {
     }
   };
   const removeStatus = (status: string) => setStatuses(statuses.filter(s => s !== status));
+
+  // Category Management
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const addCategory = () => {
+    if (newCategoryName && !categories.includes(newCategoryName)) {
+      setCategories([...categories, newCategoryName]);
+      setNewCategoryName('');
+    }
+  };
+  const removeCategory = (category: string) => setCategories(categories.filter(c => c !== category));
 
   const stats = useMemo(() => {
     const revenue = orders.reduce((sum, o) => sum + (Number(o.settledAmount) || 0), 0);
@@ -145,6 +157,24 @@ const App: React.FC = () => {
     } catch (err) {
       console.error(err);
       alert("Failed to record order.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    if (!isDbConfigured) return;
+    const orderToUpdate = orders.find(o => o.id === orderId);
+    if (!orderToUpdate) return;
+
+    const updatedOrder = { ...orderToUpdate, status: newStatus };
+    setIsSyncing(true);
+    try {
+      await dbService.updateOrder(updatedOrder);
+      setOrders(orders.map(o => o.id === orderId ? updatedOrder : o));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update status.");
     } finally {
       setIsSyncing(false);
     }
@@ -240,7 +270,7 @@ const App: React.FC = () => {
           </div>
           {!showSetup && (
             <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl overflow-x-auto max-w-[50vw]">
-              {(['dashboard', 'inventory', 'reports', 'settings'] as ViewMode[]).map(m => (
+              {(['dashboard', 'orders', 'inventory', 'reports', 'settings'] as ViewMode[]).map(m => (
                 <button 
                   key={m}
                   onClick={() => setView(m)}
@@ -258,15 +288,6 @@ const App: React.FC = () => {
             <span className={`w-1.5 h-1.5 rounded-full ${showSetup ? 'bg-rose-500' : isSyncing ? 'bg-amber-500 animate-bounce' : 'bg-emerald-500'}`}></span>
             {showSetup ? 'Setup Required' : isSyncing ? 'Syncing...' : 'Live Connected'}
           </div>
-          {view === 'inventory' && !showSetup && (
-            <button
-              onClick={() => { setEditingItem(null); setIsInvFormOpen(true); }}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2 text-sm"
-            >
-              <span>+</span>
-              Add Item
-            </button>
-          )}
         </div>
       </nav>
 
@@ -400,7 +421,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                   <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                     <h3 className="font-bold text-slate-800">Recent Transactions</h3>
-                    <span className="text-[10px] font-bold text-slate-400 bg-white border border-slate-100 px-2 py-0.5 rounded uppercase tracking-tighter">Live Audit</span>
+                    <button onClick={() => setView('orders')} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest">Manage All Orders →</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -411,14 +432,13 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                           <th className="px-6 py-4">Bank Settled</th>
                           <th className="px-6 py-4">Profit</th>
                           <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {orders.length === 0 ? (
-                          <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">No orders recorded yet.</td></tr>
+                          <tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">No orders recorded yet.</td></tr>
                         ) : (
-                          orders.map(o => (
+                          orders.slice(0, 5).map(o => (
                             <tr key={o.id} className="hover:bg-slate-50 group transition-colors">
                               <td className="px-6 py-4 font-mono text-[11px] text-slate-500">{o.id}</td>
                               <td className="px-6 py-4">
@@ -428,14 +448,9 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                               <td className="px-6 py-4 text-slate-600 font-medium">₹{(Number(o.settledAmount) || 0).toFixed(2)}</td>
                               <td className="px-6 py-4 font-bold text-emerald-600">+₹{(Number(o.profit) || 0).toFixed(2)}</td>
                               <td className="px-6 py-4">
-                                <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold uppercase ring-1 ring-slate-200">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ring-1 ${o.status === 'Settled' ? 'bg-emerald-100 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-600 ring-slate-200'}`}>
                                   {o.status}
                                 </span>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <button onClick={() => deleteOrder(o.id)} className="text-slate-200 hover:text-rose-500 transition-colors">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
                               </td>
                             </tr>
                           ))
@@ -443,6 +458,81 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {view === 'orders' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">Order Management & Tracking</h3>
+                    <p className="text-xs text-slate-400 mt-1">Track orders through your lifecycle stages until final bank settlement.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Active: {orders.length}</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-widest">
+                      <tr>
+                        <th className="px-6 py-4">Order ID & Date</th>
+                        <th className="px-6 py-4">Product Info</th>
+                        <th className="px-6 py-4 text-center">Settlement Value (₹)</th>
+                        <th className="px-6 py-4">Current Status (Progressive)</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.length === 0 ? (
+                        <tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">No orders to track. Add your first order from the dashboard.</td></tr>
+                      ) : (
+                        orders.map(o => (
+                          <tr key={o.id} className="hover:bg-slate-50 transition-colors group">
+                            <td className="px-6 py-4">
+                              <div className="font-mono text-xs font-bold text-slate-700">{o.id}</div>
+                              <div className="text-[10px] text-slate-400">{o.date}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-semibold text-slate-700">{o.productName}</div>
+                              <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-tight">{o.category}</div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                               <div className="text-indigo-600 font-bold">₹{(Number(o.settledAmount) || 0).toFixed(2)}</div>
+                               <div className="text-[9px] text-emerald-500 font-black uppercase">Profit: ₹{(Number(o.profit) || 0).toFixed(2)}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <select 
+                                value={o.status}
+                                onChange={(e) => updateOrderStatus(o.id, e.target.value)}
+                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all outline-none focus:ring-2 focus:ring-indigo-500/20 ${
+                                  o.status === 'Settled' 
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                                    : o.status === 'Cancelled' || o.status === 'Returned'
+                                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300'
+                                }`}
+                              >
+                                {statuses.map(s => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                               <button 
+                                 onClick={() => deleteOrder(o.id)}
+                                 className="p-2 text-slate-300 hover:text-rose-600 transition-colors"
+                                 title="Delete Order Record"
+                               >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                               </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -559,7 +649,8 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
             )}
 
             {view === 'settings' && (
-              <div className="max-w-xl mx-auto space-y-6">
+              <div className="max-w-xl mx-auto space-y-8">
+                {/* Workflow Labels */}
                 <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
                   <h3 className="text-xl font-bold mb-2">Workflow Management</h3>
                   <p className="text-xs text-slate-400 mb-6">Manage your business order stages and status labels.</p>
@@ -567,7 +658,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                   <div className="flex gap-2 mb-8">
                     <input 
                       type="text" 
-                      className="flex-grow px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white" 
+                      className="flex-grow px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white text-slate-900" 
                       placeholder="e.g. Dispatched, Pending Verification..."
                       value={newStatusName}
                       onChange={e => setNewStatusName(e.target.value)}
@@ -587,6 +678,43 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                         <span className="text-sm font-semibold text-slate-600">{s}</span>
                         <button 
                           onClick={() => removeStatus(s)}
+                          className="text-slate-300 hover:text-rose-500 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Category Customization */}
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-xl font-bold mb-2">Category Customization</h3>
+                  <p className="text-xs text-slate-400 mb-6">Create and manage product categories for your inventory.</p>
+                  
+                  <div className="flex gap-2 mb-8">
+                    <input 
+                      type="text" 
+                      className="flex-grow px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white text-slate-900" 
+                      placeholder="e.g. Footwear, Accessories, Groceries..."
+                      value={newCategoryName}
+                      onChange={e => setNewCategoryName(e.target.value)}
+                      onKeyPress={e => e.key === 'Enter' && addCategory()}
+                    />
+                    <button 
+                      onClick={addCategory}
+                      className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                    >
+                      Add Category
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2">
+                    {categories.map(c => (
+                      <div key={c} className="flex items-center justify-between p-4 bg-emerald-50/30 border border-emerald-100 rounded-xl hover:bg-white hover:border-emerald-200 transition-all">
+                        <span className="text-sm font-semibold text-slate-700">{c}</span>
+                        <button 
+                          onClick={() => removeCategory(c)}
                           className="text-slate-300 hover:text-rose-500 transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -622,6 +750,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
           onClose={handleCloseInvForm} 
           initialData={editingItem}
           inventory={inventory}
+          categories={categories}
         />
       )}
     </div>

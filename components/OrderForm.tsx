@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Order, InventoryItem } from '../types.ts';
 
@@ -9,7 +10,7 @@ interface OrderFormProps {
 
 const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => {
   const [formData, setFormData] = useState({
-    id: `ORD-${Math.floor(Math.random() * 100000)}`,
+    id: '',
     date: new Date().toISOString().split('T')[0],
     productId: '',
     status: statuses[0] || ''
@@ -21,6 +22,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
     e.preventDefault();
     if (!selectedProduct) {
       alert("Please select a product from inventory.");
+      return;
+    }
+
+    if (!formData.id.trim()) {
+      alert("Please enter a valid Order ID.");
       return;
     }
 
@@ -43,7 +49,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
     onAdd(newOrder);
     
     setFormData({
-      id: `ORD-${Math.floor(Math.random() * 100000)}`,
+      id: '',
       date: new Date().toISOString().split('T')[0],
       productId: '',
       status: statuses[0] || ''
@@ -67,6 +73,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
             <input
               required
               type="text"
+              placeholder="e.g. #7721"
               className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white font-mono text-xs text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none"
               value={formData.id}
               onChange={e => setFormData({...formData, id: e.target.value})}
