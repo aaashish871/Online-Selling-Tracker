@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Order, InventoryItem, MonthlyReport } from './types.ts';
 import { INITIAL_STATUSES } from './constants.tsx';
@@ -48,8 +47,8 @@ const App: React.FC = () => {
           dbService.getOrders(),
           dbService.getInventory()
         ]);
-        setOrders(fetchedOrders);
-        setInventory(fetchedInventory);
+        setOrders(fetchedOrders || []);
+        setInventory(fetchedInventory || []);
         setIsTableMissing(false);
       } catch (error: any) {
         console.error("Database connection failed", error);
@@ -74,10 +73,10 @@ const App: React.FC = () => {
   const removeStatus = (status: string) => setStatuses(statuses.filter(s => s !== status));
 
   const stats = useMemo(() => {
-    const revenue = orders.reduce((sum, o) => sum + o.settledAmount, 0);
-    const profit = orders.reduce((sum, o) => sum + o.profit, 0);
+    const revenue = orders.reduce((sum, o) => sum + (Number(o.settledAmount) || 0), 0);
+    const profit = orders.reduce((sum, o) => sum + (Number(o.profit) || 0), 0);
     const count = orders.length;
-    const margin = count > 0 ? (profit / revenue) * 100 : 0;
+    const margin = count > 0 ? (profit / (revenue || 1)) * 100 : 0;
     
     return {
       totalRevenue: revenue,
@@ -100,8 +99,8 @@ const App: React.FC = () => {
           topProduct: '' 
         };
       }
-      reportsMap[monthYear].sales += o.settledAmount;
-      reportsMap[monthYear].profit += o.profit;
+      reportsMap[monthYear].sales += (Number(o.settledAmount) || 0);
+      reportsMap[monthYear].profit += (Number(o.profit) || 0);
       reportsMap[monthYear].orderCount += 1;
     });
 
@@ -122,8 +121,8 @@ const App: React.FC = () => {
       if (!categoryMap[o.category]) {
         categoryMap[o.category] = { name: o.category, profit: 0, revenue: 0 };
       }
-      categoryMap[o.category].profit += o.profit;
-      categoryMap[o.category].revenue += o.settledAmount;
+      categoryMap[o.category].profit += (Number(o.profit) || 0);
+      categoryMap[o.category].revenue += (Number(o.settledAmount) || 0);
     });
     return Object.values(categoryMap);
   }, [orders]);
@@ -142,7 +141,10 @@ const App: React.FC = () => {
       await dbService.saveOrder(order);
       setOrders([order, ...orders]);
       const updatedInv = await dbService.getInventory();
-      setInventory(updatedInv);
+      setInventory(updatedInv || []);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to record order.");
     } finally {
       setIsSyncing(false);
     }
@@ -150,6 +152,7 @@ const App: React.FC = () => {
 
   const deleteOrder = async (id: string) => {
     if (!isDbConfigured) return;
+    if (!confirm("Are you sure you want to delete this order record?")) return;
     setIsSyncing(true);
     try {
       await dbService.deleteOrder(id);
@@ -164,7 +167,11 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       await dbService.saveInventoryItem(item);
-      setInventory([item, ...inventory]);
+      const updatedInv = await dbService.getInventory();
+      setInventory(updatedInv || []);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save product.");
     } finally {
       setIsSyncing(false);
     }
@@ -175,7 +182,11 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       await dbService.updateInventoryItem(item);
-      setInventory(inventory.map(i => i.id === item.id ? item : i));
+      const updatedInv = await dbService.getInventory();
+      setInventory(updatedInv || []);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update product.");
     } finally {
       setIsSyncing(false);
     }
@@ -183,7 +194,7 @@ const App: React.FC = () => {
 
   const deleteInventoryItem = async (id: string) => {
     if (!isDbConfigured) return;
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    if (!confirm('Are you sure you want to delete this product? This may affect order history if referenced.')) return;
     setIsSyncing(true);
     try {
       await dbService.deleteInventoryItem(id);
@@ -194,7 +205,7 @@ const App: React.FC = () => {
   };
 
   const handleEditInventory = (item: InventoryItem) => {
-    setEditingItem(item);
+    setEditingItem({...item});
     setIsInvFormOpen(true);
   };
 
@@ -249,7 +260,7 @@ const App: React.FC = () => {
           </div>
           {view === 'inventory' && !showSetup && (
             <button
-              onClick={() => setIsInvFormOpen(true)}
+              onClick={() => { setEditingItem(null); setIsInvFormOpen(true); }}
               className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2 text-sm"
             >
               <span>+</span>
@@ -414,8 +425,8 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                                 <div className="font-medium text-slate-700">{o.productName}</div>
                                 <div className="text-[10px] text-slate-400">{o.date}</div>
                               </td>
-                              <td className="px-6 py-4 text-slate-600 font-medium">₹{o.settledAmount.toFixed(2)}</td>
-                              <td className="px-6 py-4 font-bold text-emerald-600">+₹{o.profit.toFixed(2)}</td>
+                              <td className="px-6 py-4 text-slate-600 font-medium">₹{(Number(o.settledAmount) || 0).toFixed(2)}</td>
+                              <td className="px-6 py-4 font-bold text-emerald-600">+₹{(Number(o.profit) || 0).toFixed(2)}</td>
                               <td className="px-6 py-4">
                                 <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold uppercase ring-1 ring-slate-200">
                                   {o.status}
@@ -440,20 +451,26 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
                   <div>
-                    <h3 className="text-lg font-bold">Inventory Catalog</h3>
+                    <h3 className="text-lg font-bold text-slate-800">Inventory Catalog</h3>
                     <p className="text-xs text-slate-400 mt-1">Configure your product purchasing and bank settlement values here.</p>
                   </div>
+                  <button 
+                    onClick={() => { setEditingItem(null); setIsInvFormOpen(true); }}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all"
+                  >
+                    Add New Product
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-widest">
                       <tr>
-                        <th className="px-6 py-4">Product</th>
-                        <th className="px-6 py-4">Purchasing (₹)</th>
+                        <th className="px-6 py-4">Product Details</th>
+                        <th className="px-6 py-4">Unit Cost (₹)</th>
                         <th className="px-6 py-4">Bank Settled (₹)</th>
-                        <th className="px-6 py-4">Per Unit Profit</th>
-                        <th className="px-6 py-4">Stock</th>
-                        <th className="px-6 py-4"></th>
+                        <th className="px-6 py-4">Unit Profit</th>
+                        <th className="px-6 py-4">Stock Status</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -463,33 +480,33 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                         inventory.map(item => (
                           <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                             <td className="px-6 py-4">
-                              <strong className="text-slate-700">{item.name}</strong><br/>
+                              <strong className="text-slate-700 font-semibold">{item.name}</strong><br/>
                               <span className="text-[10px] text-slate-400 font-mono tracking-tighter">SKU: {item.sku} | Website: ₹{item.retailPrice}</span>
                             </td>
-                            <td className="px-6 py-4 text-rose-500 font-medium italic">₹{item.unitCost.toFixed(2)}</td>
-                            <td className="px-6 py-4 text-indigo-600 font-bold">₹{item.bankSettledAmount.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-rose-500 font-medium">₹{(Number(item.unitCost) || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-indigo-600 font-bold">₹{(Number(item.bankSettledAmount) || 0).toFixed(2)}</td>
                             <td className="px-6 py-4">
-                              <div className="font-bold text-emerald-600">₹{(item.bankSettledAmount - item.unitCost).toFixed(2)}</div>
-                              <div className="text-[9px] text-slate-400 uppercase font-black">Margin: {(((item.bankSettledAmount - item.unitCost) / (item.bankSettledAmount || 1)) * 100).toFixed(1)}%</div>
+                              <div className="font-bold text-emerald-600">₹{((Number(item.bankSettledAmount) || 0) - (Number(item.unitCost) || 0)).toFixed(2)}</div>
+                              <div className="text-[9px] text-slate-400 uppercase font-black">Margin: {((((Number(item.bankSettledAmount) || 0) - (Number(item.unitCost) || 0)) / (Number(item.bankSettledAmount) || 1)) * 100).toFixed(1)}%</div>
                             </td>
                             <td className="px-6 py-4">
                               <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${item.stockLevel < item.minStockLevel ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-600'}`}>
                                 {item.stockLevel} units
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center justify-end gap-2">
                                 <button 
                                   onClick={() => handleEditInventory(item)} 
-                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                  title="Edit Item"
+                                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                  title="Edit Product"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                 </button>
                                 <button 
                                   onClick={() => deleteInventoryItem(item.id)} 
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                  title="Delete Item"
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                  title="Delete Product"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                 </button>
@@ -509,7 +526,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
                     <span className="w-2 h-2 bg-indigo-600 rounded-full"></span>
-                    Monthly Bank Settlement Report
+                    Monthly Performance Summary
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {monthlyReports.map(report => (
@@ -520,7 +537,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                         </div>
                         <div className="space-y-4">
                           <div className="flex justify-between items-end">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Total Settlement</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Net Settlement</span>
                             <span className="text-lg font-bold text-slate-800">₹{report.sales.toLocaleString()}</span>
                           </div>
                           <div className="flex justify-between items-end">
@@ -544,14 +561,14 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
             {view === 'settings' && (
               <div className="max-w-xl mx-auto space-y-6">
                 <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
-                  <h3 className="text-xl font-bold mb-2">Workflow Settings</h3>
+                  <h3 className="text-xl font-bold mb-2">Workflow Management</h3>
                   <p className="text-xs text-slate-400 mb-6">Manage your business order stages and status labels.</p>
                   
                   <div className="flex gap-2 mb-8">
                     <input 
                       type="text" 
-                      className="flex-grow px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                      placeholder="New status name..."
+                      className="flex-grow px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white" 
+                      placeholder="e.g. Dispatched, Pending Verification..."
                       value={newStatusName}
                       onChange={e => setNewStatusName(e.target.value)}
                       onKeyPress={e => e.key === 'Enter' && addStatus()}
@@ -560,7 +577,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
                       onClick={addStatus}
                       className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
                     >
-                      Add
+                      Add Label
                     </button>
                   </div>
                   
@@ -604,6 +621,7 @@ EXECUTE FUNCTION osot_handle_new_order_stock();`}
           onUpdate={updateInventoryItem}
           onClose={handleCloseInvForm} 
           initialData={editingItem}
+          inventory={inventory}
         />
       )}
     </div>
