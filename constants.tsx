@@ -4,6 +4,7 @@ import { Order, InventoryItem } from './types.ts';
 export const INITIAL_STATUSES = [
   'Order Received',
   'Order Accepted',
+  'Label Downloaded',
   'Prepared',
   'Order Packed',
   'Ready for Shipment',
