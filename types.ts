@@ -9,6 +9,10 @@ export interface Order {
   settledAmount: number; // The amount received in bank
   profit: number;
   status: string;
+  // Return Tracking
+  returnType?: 'Courier' | 'Customer' | null;
+  lossAmount?: number;
+  claimStatus?: 'Pending' | 'Approved' | 'Rejected' | 'None';
 }
 
 export interface InventoryItem {
