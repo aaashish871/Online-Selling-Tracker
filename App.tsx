@@ -37,6 +37,10 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
+  // Filtering States for Orders
+  const [orderFilterMonth, setOrderFilterMonth] = useState('all');
+  const [orderFilterStatus, setOrderFilterStatus] = useState('all');
+
   // Reports State
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -176,6 +180,33 @@ const App: React.FC = () => {
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
   }, [orders]);
+
+  // Status Counts for Cards - Sorted by Highest
+  const orderStatusSummary = useMemo(() => {
+    const counts: Record<string, number> = {};
+    orders.forEach(o => {
+      counts[o.status] = (counts[o.status] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [orders]);
+
+  // Available unique months for filtering
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    orders.forEach(o => months.add(o.date.substring(0, 7)));
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [orders]);
+
+  // Filtered Orders Logic
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const monthMatch = orderFilterMonth === 'all' || o.date.startsWith(orderFilterMonth);
+      const statusMatch = orderFilterStatus === 'all' || o.status === orderFilterStatus;
+      return monthMatch && statusMatch;
+    });
+  }, [orders, orderFilterMonth, orderFilterStatus]);
 
   if (!user && !authLoading) {
     return (
@@ -347,49 +378,100 @@ const App: React.FC = () => {
         )}
 
         {view === 'orders' && (
-          <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
-            <div className="p-8 border-b border-slate-50 flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Order Management</h2>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{orders.length} Records</span>
+          <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Status Summary Cards - Sorted by Highest Count */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {orderStatusSummary.map(({ status, count }) => (
+                <div 
+                  key={status} 
+                  className={`p-4 rounded-2xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer hover:shadow-md ${orderFilterStatus === status ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-100 text-slate-800'}`}
+                  onClick={() => setOrderFilterStatus(orderFilterStatus === status ? 'all' : status)}
+                >
+                  <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${orderFilterStatus === status ? 'text-indigo-100' : 'text-slate-400'}`}>{status}</span>
+                  <span className="text-2xl font-black tracking-tighter">{count}</span>
+                </div>
+              ))}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <tr>
-                    <th className="px-8 py-4">ID</th>
-                    <th className="px-4 py-4">Product</th>
-                    <th className="px-4 py-4">Date</th>
-                    <th className="px-4 py-4">Settled</th>
-                    <th className="px-4 py-4">Profit</th>
-                    <th className="px-4 py-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {orders.map(o => (
-                    <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-8 py-4 font-black text-indigo-600 text-xs">{o.id}</td>
-                      <td className="px-4 py-4 font-bold text-slate-800 text-xs">{o.productName}</td>
-                      <td className="px-4 py-4 text-slate-400 text-[11px]">{o.date}</td>
-                      <td className="px-4 py-4 font-bold text-slate-700 text-xs">₹{o.settledAmount}</td>
-                      <td className={`px-4 py-4 font-black text-xs ${o.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>₹{o.profit}</td>
-                      <td className="px-4 py-4">
-                        <select 
-                          className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200"
-                          value={o.status}
-                          onChange={async (e) => {
-                            const updated = { ...o, status: e.target.value };
-                            await dbService.updateOrder(updated);
-                            loadData();
-                          }}
-                        >
-                          {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </td>
+
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Order Management</h2>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filteredOrders.length} Records Showing</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="flex-1 md:flex-none">
+                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Month Filter</label>
+                    <select 
+                      className="w-full md:w-40 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
+                      value={orderFilterMonth}
+                      onChange={e => setOrderFilterMonth(e.target.value)}
+                    >
+                      <option value="all">All Months</option>
+                      {availableMonths.map(m => (
+                        <option key={m} value={m}>{new Date(m + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 md:flex-none">
+                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Status Filter</label>
+                    <select 
+                      className="w-full md:w-40 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
+                      value={orderFilterStatus}
+                      onChange={e => setOrderFilterStatus(e.target.value)}
+                    >
+                      <option value="all">All Statuses</option>
+                      {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <button 
+                    onClick={() => { setOrderFilterMonth('all'); setOrderFilterStatus('all'); }}
+                    className="mt-4 md:mt-0 p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Clear Filters"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <tr>
+                      <th className="px-8 py-4">ID</th>
+                      <th className="px-4 py-4">Product</th>
+                      <th className="px-4 py-4">Date</th>
+                      <th className="px-4 py-4">Settled</th>
+                      <th className="px-4 py-4">Profit</th>
+                      <th className="px-4 py-4">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {orders.length === 0 && <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">No orders found</div>}
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredOrders.map(o => (
+                      <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-4 font-black text-indigo-600 text-xs">{o.id}</td>
+                        <td className="px-4 py-4 font-bold text-slate-800 text-xs">{o.productName}</td>
+                        <td className="px-4 py-4 text-slate-400 text-[11px]">{o.date}</td>
+                        <td className="px-4 py-4 font-bold text-slate-700 text-xs">₹{o.settledAmount}</td>
+                        <td className={`px-4 py-4 font-black text-xs ${o.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>₹{o.profit}</td>
+                        <td className="px-4 py-4">
+                          <select 
+                            className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200"
+                            value={o.status}
+                            onChange={async (e) => {
+                              const updated = { ...o, status: e.target.value };
+                              await dbService.updateOrder(updated);
+                              loadData();
+                            }}
+                          >
+                            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredOrders.length === 0 && <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">No matching records found</div>}
+              </div>
             </div>
           </div>
         )}
