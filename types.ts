@@ -31,6 +31,7 @@ export interface InventoryItem {
 export interface UserProfile {
   id: string;
   email: string;
+  role: string;
   updated_at: string;
 }
 
