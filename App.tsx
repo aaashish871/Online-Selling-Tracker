@@ -458,9 +458,16 @@ const App: React.FC = () => {
                             className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200"
                             value={o.status}
                             onChange={async (e) => {
-                              const updated = { ...o, status: e.target.value };
-                              await dbService.updateOrder(updated);
-                              loadData();
+                              const newStatus = e.target.value;
+                              // Targeted state update instead of loadData() to prevent perceived "page refresh"
+                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, status: newStatus } : item));
+                              try {
+                                const updated = { ...o, status: newStatus };
+                                await dbService.updateOrder(updated);
+                              } catch (err) {
+                                console.error("Failed to update status:", err);
+                                loadData(); // Re-sync on failure
+                              }
                             }}
                           >
                             {statuses.map(s => <option key={s} value={s}>{s}</option>)}
