@@ -28,6 +28,12 @@ export interface InventoryItem {
   minStockLevel: number;
 }
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  updated_at: string;
+}
+
 export interface MonthlyReport {
   month: string;
   sales: number;
