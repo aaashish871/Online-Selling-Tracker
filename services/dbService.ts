@@ -12,12 +12,6 @@ import { Order, InventoryItem } from "../types.ts";
  * ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) DEFAULT auth.uid();
  * ALTER TABLE osot_inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
  * ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
- * 
- * TO RECOVER "MISSING" DATA:
- * If your old data is not visible, it's because it doesn't have a user_id assigned yet.
- * Run this:
- * UPDATE osot_inventory SET user_id = auth.uid() WHERE user_id IS NULL;
- * UPDATE osot_orders SET user_id = auth.uid() WHERE user_id IS NULL;
  */
 
 const supabaseUrl = 'https://yvugbgjrakdcgirxpcvi.supabase.co';
@@ -56,6 +50,31 @@ export const dbService = {
   },
 
   /**
+   * Checks for records that don't have a user_id.
+   * Note: This might return 0 if RLS is enabled and blocking "orphaned" reads.
+   */
+  async getOrphanedCounts(): Promise<{ orders: number; inventory: number }> {
+    if (!supabase) return { orders: 0, inventory: 0 };
+    
+    // We try to select where user_id is null. 
+    // If RLS is strictly "user_id = auth.uid()", this will always return 0.
+    const { count: ordCount } = await supabase
+      .from('osot_orders')
+      .select('*', { count: 'exact', head: true })
+      .is('user_id', null);
+
+    const { count: invCount } = await supabase
+      .from('osot_inventory')
+      .select('*', { count: 'exact', head: true })
+      .is('user_id', null);
+
+    return { 
+      orders: ordCount || 0, 
+      inventory: invCount || 0 
+    };
+  },
+
+  /**
    * Assigns all records with NULL user_id to the currently logged in user.
    * This recovers data stored before the multi-user update.
    */
@@ -65,24 +84,28 @@ export const dbService = {
     if (!user) return { success: false, count: 0, error: "Not logged in" };
 
     try {
+      // We use 'count: exact' to see how many were actually changed
       const invUpdate = await supabase
         .from('osot_inventory')
         .update({ user_id: user.id })
-        .is('user_id', null);
+        .is('user_id', null)
+        .select();
 
       const ordUpdate = await supabase
         .from('osot_orders')
         .update({ user_id: user.id })
-        .is('user_id', null);
+        .is('user_id', null)
+        .select();
 
       if (invUpdate.error) throw invUpdate.error;
       if (ordUpdate.error) throw ordUpdate.error;
 
       return { 
         success: true, 
-        count: (invUpdate.count || 0) + (ordUpdate.count || 0) 
+        count: (invUpdate.data?.length || 0) + (ordUpdate.data?.length || 0) 
       };
     } catch (e: any) {
+      console.error("Migration Error:", e);
       return { success: false, count: 0, error: e.message };
     }
   },

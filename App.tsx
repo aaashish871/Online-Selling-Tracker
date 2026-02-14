@@ -49,6 +49,7 @@ const App: React.FC = () => {
   const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
   const [returnModalOrder, setReturnModalOrder] = useState<Order | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [orphanedCount, setOrphanedCount] = useState({ orders: 0, inventory: 0 });
 
   const isDbConfigured = dbService.isConfigured();
 
@@ -92,13 +93,15 @@ const App: React.FC = () => {
     setIsLoading(true);
     setDbErrorMessage(null);
     try {
-      const [fetchedOrders, fetchedInventory] = await Promise.all([
+      const [fetchedOrders, fetchedInventory, orphans] = await Promise.all([
         dbService.getOrders(),
-        dbService.getInventory()
+        dbService.getInventory(),
+        dbService.getOrphanedCounts()
       ]);
       const sortedOrders = (fetchedOrders || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setOrders(sortedOrders);
       setInventory(fetchedInventory || []);
+      setOrphanedCount(orphans);
     } catch (error: any) {
       console.error("Database error", error);
       if (error.message === 'SCHEMA_MISSING_USER_ID') {
@@ -116,15 +119,19 @@ const App: React.FC = () => {
   }, [user]);
 
   const handleClaimLegacyData = async () => {
-    if (!confirm("This will attempt to assign all 'orphaned' records (data with no owner) to your account. Proceed?")) return;
+    if (!confirm("This will attempt to assign all 'orphaned' records (data with no owner) to your account via the App Session. Proceed?")) return;
     setIsMigrating(true);
     const result = await dbService.claimLegacyData();
     setIsMigrating(false);
     if (result.success) {
-      alert("Success! Records updated. Refreshing dashboard...");
-      loadData();
+      if (result.count > 0) {
+        alert(`Success! ${result.count} records recovered. Refreshing...`);
+        loadData();
+      } else {
+        alert("No orphaned records were found via the app session. This might be due to Database security policies (RLS). Please use the Manual SQL method provided in Settings.");
+      }
     } else {
-      alert(`Migration failed: ${result.error || 'Check SQL console'}. You might need to run the SQL command provided in the setup screen.`);
+      alert(`Migration failed: ${result.error || 'Check console'}. Use the Manual SQL command provided below.`);
     }
   };
 
@@ -243,7 +250,7 @@ const App: React.FC = () => {
                   {showPassword ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" /></svg>
                   ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                   )}
                 </button>
               </div>
@@ -331,10 +338,10 @@ ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT 
                   <StatsCard label="Total Orders" value={stats.orderCount} color="bg-slate-800" icon="📦" />
                 </div>
                 
-                {orders.length === 0 && !isLoading && (
+                {(orders.length === 0 || orphanedCount.orders > 0) && !isLoading && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between">
-                    <p className="text-xs font-bold text-amber-700">Missing your old data? Since the security update, you need to sync your legacy records. Check the Settings tab.</p>
-                    <button onClick={() => setView('settings')} className="text-[10px] font-black uppercase text-indigo-600">Go to Settings</button>
+                    <p className="text-xs font-bold text-amber-700">Records detected in database but not assigned to you. Recover them in the Settings tab.</p>
+                    <button onClick={() => setView('settings')} className="text-[10px] font-black uppercase text-indigo-600">Fix Now</button>
                   </div>
                 )}
 
@@ -488,20 +495,61 @@ ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT 
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-8">System Configuration</h2>
                   
+                  {/* Account Info */}
+                  <div className="mb-12 p-6 bg-slate-50 border border-slate-100 rounded-3xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">My Account Information</h4>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                         <div>
+                           <p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1">Unique User ID (UID)</p>
+                           <code className="text-[11px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{user?.id}</code>
+                         </div>
+                         <button 
+                          onClick={() => { navigator.clipboard.writeText(user?.id || ''); alert("UID Copied!"); }}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100"
+                        >
+                          Copy ID
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Migration Tool */}
                   <div className="mb-12 p-6 bg-indigo-50 border border-indigo-100 rounded-3xl">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">🔄</div>
                       <div className="flex-1">
                         <h4 className="text-sm font-black text-indigo-900 uppercase tracking-wider mb-1">Data Migration & Recovery</h4>
-                        <p className="text-xs text-indigo-700 font-medium mb-4 leading-relaxed">If you stored orders before creating an account, they are currently hidden. Click below to claim your legacy data and assign it to your new account.</p>
-                        <button 
-                          onClick={handleClaimLegacyData}
-                          disabled={isMigrating}
-                          className="px-6 py-3 bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-                        >
-                          {isMigrating ? 'Processing...' : 'Sync Legacy Data'}
-                        </button>
+                        <p className="text-xs text-indigo-700 font-medium mb-4 leading-relaxed">If you ran the SQL command earlier and data is still missing, it is because <code className="bg-indigo-100 px-1 rounded">auth.uid()</code> doesn't work in the SQL Editor. You must use your manual ID below.</p>
+                        
+                        <div className="space-y-4">
+                          <div className="bg-slate-900 p-5 rounded-2xl shadow-xl border border-slate-800">
+                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Run this NEW command in Supabase SQL Editor:</p>
+                             <pre className="text-[10px] font-mono text-emerald-400 whitespace-pre-wrap leading-relaxed select-all cursor-pointer" onClick={(e) => { navigator.clipboard.writeText((e.currentTarget as HTMLPreElement).innerText); alert("SQL Copied!"); }}>
+{`UPDATE osot_inventory SET user_id = '${user?.id}' WHERE user_id IS NULL;
+UPDATE osot_orders SET user_id = '${user?.id}' WHERE user_id IS NULL;`}
+                             </pre>
+                             <p className="text-[8px] text-slate-600 mt-4 italic">Click the code above to copy it automatically.</p>
+                          </div>
+
+                          <div className="flex gap-3">
+                            <button 
+                              onClick={handleClaimLegacyData}
+                              disabled={isMigrating}
+                              className="px-6 py-4 bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                              {isMigrating ? 'Syncing...' : 'Try Syncing via App'}
+                            </button>
+                            <button 
+                              onClick={loadData}
+                              className="px-6 py-4 bg-white border border-indigo-200 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-indigo-50"
+                            >
+                              Refresh Dashboard
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
