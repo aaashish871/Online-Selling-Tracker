@@ -6,6 +6,7 @@ import StatsCard from './components/StatsCard.tsx';
 import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
 import { dbService } from './services/dbService.ts';
+import { getAIAnalysis } from './services/geminiService.ts';
 import { User } from '@supabase/supabase-js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
@@ -36,6 +37,10 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
+  // Reports State
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // New Member Onboarding States
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
@@ -112,20 +117,32 @@ const App: React.FC = () => {
 
   const handleOnboardMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirm(`Registering ${newMemberEmail} as ${newMemberRole}. Note: You will need to re-login as Admin after this action. Proceed?`)) return;
+    if (!confirm(`This will register ${newMemberEmail} as ${newMemberRole}. IMPORTANT: You will be logged out and must sign back in as Admin to see this user in your directory. Continue?`)) return;
     
     setIsOnboarding(true);
     try {
       const { error } = await dbService.register(newMemberEmail, newMemberPassword, newMemberRole);
       if (error) throw error;
-      alert(`Success! Team member created. Redirecting to admin login.`);
+      alert(`User ${newMemberEmail} created! Logging out. Please sign in as Admin.`);
       handleLogout();
     } catch (e: any) {
       alert("Registration failed: " + e.message);
     } finally {
       setIsOnboarding(false);
-      setNewMemberEmail('');
-      setNewMemberPassword('');
+    }
+  };
+
+  const runAIAnalysis = async () => {
+    if (orders.length === 0) {
+      alert("Record some orders first to get AI insights!");
+      return;
+    }
+    setIsAnalyzing(true);
+    try {
+      const result = await getAIAnalysis(orders);
+      setAiAnalysis(result);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -233,7 +250,7 @@ const App: React.FC = () => {
       <main className="flex-grow max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24">
         {view === 'team' && isAdmin && (
           <div className="space-y-6 animate-in slide-in-from-bottom-10">
-            {/* Onboard New Member with Role */}
+            {/* Onboard New Member Form */}
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <h2 className="text-xl font-black text-slate-900 tracking-tight mb-6">Onboard New Member</h2>
               <form onSubmit={handleOnboardMember} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -259,11 +276,7 @@ const App: React.FC = () => {
                       onChange={e => setNewMemberPassword(e.target.value)}
                       required
                     />
-                    <button 
-                      type="button" 
-                      onClick={() => setShowNewMemberPassword(!showNewMemberPassword)} 
-                      className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600"
-                    >
+                    <button type="button" onClick={() => setShowNewMemberPassword(!showNewMemberPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600">
                       {showNewMemberPassword ? '👁️' : '🕶️'}
                     </button>
                   </div>
@@ -278,63 +291,46 @@ const App: React.FC = () => {
                     {TEAM_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                <button 
-                  type="submit" 
-                  disabled={isOnboarding}
-                  className="py-4 bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-xl hover:bg-indigo-700 disabled:opacity-50 h-[56px]"
-                >
-                  {isOnboarding ? 'Adding...' : 'Onboard Member'}
+                <button type="submit" disabled={isOnboarding} className="py-4 bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-xl hover:bg-indigo-700 disabled:opacity-50 h-[56px]">
+                  {isOnboarding ? 'Onboarding...' : 'Onboard Member'}
                 </button>
               </form>
             </div>
 
-            {/* Team Directory with Role Badges */}
+            {/* Team Directory */}
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight mb-8">Team Directory</h2>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">Team Directory</h2>
+                <button onClick={loadData} className="px-4 py-2 bg-slate-50 text-[10px] font-black uppercase text-slate-400 rounded-xl hover:bg-slate-100 transition-colors">Refresh Directory</button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {profiles.map(p => (
                   <div key={p.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 group transition-all hover:bg-white hover:shadow-xl hover:border-indigo-100 relative overflow-hidden">
                     <div className="flex justify-between items-start mb-4">
-                      <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-xl shadow-sm group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">👤</div>
-                      <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${
-                        p.role === 'Manager' ? 'bg-purple-50 text-purple-600 border-purple-100' : 
-                        p.role === 'Viewer' ? 'bg-slate-50 text-slate-500 border-slate-100' :
-                        'bg-blue-50 text-blue-600 border-blue-100'
-                      }`}>
+                      <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-xl shadow-sm">👤</div>
+                      <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${p.role === 'Manager' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                         {p.role || 'Staff'}
                       </span>
                     </div>
                     <h4 className="text-sm font-black text-slate-800 tracking-tight truncate">{p.email}</h4>
-                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">Active Cloud Instance</p>
-                    <button 
-                      onClick={() => setSharingUser(p)}
-                      className="mt-6 w-full py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all"
-                    >
-                      Sync Business Data
-                    </button>
+                    <button onClick={() => setSharingUser(p)} className="mt-6 w-full py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Sync Data</button>
                   </div>
                 ))}
-                {profiles.length === 0 && (
-                  <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-100 rounded-[2rem]">
-                    <p className="text-sm font-bold text-slate-400">Directory is currently empty.</p>
-                  </div>
-                )}
+                {profiles.length === 0 && <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-100 rounded-[2rem]"><p className="text-sm font-bold text-slate-400">Directory is currently empty. Members will appear here after they sign up.</p></div>}
               </div>
             </div>
           </div>
         )}
 
         {view === 'dashboard' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatsCard label="Net Settled" value={`₹${stats.rev.toLocaleString()}`} color="bg-indigo-600" icon="₹" />
               <StatsCard label="Net Profit" value={`₹${stats.prof.toLocaleString()}`} color="bg-emerald-500" icon="📈" />
               <StatsCard label="Total Orders" value={stats.count} color="bg-slate-800" icon="📦" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4">
-                <OrderForm onAdd={async o => { await dbService.saveOrder(o); loadData(); }} inventory={inventory} statuses={statuses} />
-              </div>
+              <div className="lg:col-span-4"><OrderForm onAdd={async o => { await dbService.saveOrder(o); loadData(); }} inventory={inventory} statuses={statuses} /></div>
               <div className="lg:col-span-8 bg-white p-6 rounded-[2rem] border border-slate-100 h-[350px]">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Sales Trend</h3>
                 <ResponsiveContainer width="100%" height="100%">
@@ -350,49 +346,149 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {(['orders', 'inventory', 'reports', 'settings'] as ViewMode[]).includes(view) && (
-          <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center">
-            <h3 className="text-xl font-black text-slate-800 uppercase tracking-widest text-indigo-600">{view} Active</h3>
-            <p className="text-sm text-slate-400 mt-2 font-medium">This module is currently syncing with the cloud database.</p>
+        {view === 'orders' && (
+          <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Order Management</h2>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{orders.length} Records</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <tr>
+                    <th className="px-8 py-4">ID</th>
+                    <th className="px-4 py-4">Product</th>
+                    <th className="px-4 py-4">Date</th>
+                    <th className="px-4 py-4">Settled</th>
+                    <th className="px-4 py-4">Profit</th>
+                    <th className="px-4 py-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {orders.map(o => (
+                    <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-8 py-4 font-black text-indigo-600 text-xs">{o.id}</td>
+                      <td className="px-4 py-4 font-bold text-slate-800 text-xs">{o.productName}</td>
+                      <td className="px-4 py-4 text-slate-400 text-[11px]">{o.date}</td>
+                      <td className="px-4 py-4 font-bold text-slate-700 text-xs">₹{o.settledAmount}</td>
+                      <td className={`px-4 py-4 font-black text-xs ${o.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>₹{o.profit}</td>
+                      <td className="px-4 py-4">
+                        <select 
+                          className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200"
+                          value={o.status}
+                          onChange={async (e) => {
+                            const updated = { ...o, status: e.target.value };
+                            await dbService.updateOrder(updated);
+                            loadData();
+                          }}
+                        >
+                          {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {orders.length === 0 && <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">No orders found</div>}
+            </div>
+          </div>
+        )}
+
+        {view === 'inventory' && (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Stock Inventory</h2>
+              <button onClick={() => { setEditingItem(null); setIsInvFormOpen(true); }} className="px-6 py-3 bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-xl hover:bg-indigo-700 transition-all">+ Add Product</button>
+            </div>
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <tr><th className="px-8 py-4">SKU</th><th className="px-4 py-4">Product Name</th><th className="px-4 py-4">Stock</th><th className="px-4 py-4">Unit Cost</th><th className="px-4 py-4">Actions</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {inventory.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-4 font-mono text-[10px] font-black text-slate-400 uppercase tracking-tighter">{item.sku}</td>
+                        <td className="px-4 py-4 font-bold text-slate-800 text-xs">{item.name}</td>
+                        <td className="px-4 py-4">
+                          <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${item.stockLevel <= item.minStockLevel ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            {item.stockLevel} units
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 font-bold text-slate-700 text-xs">₹{item.unitCost}</td>
+                        <td className="px-4 py-4">
+                          <button onClick={() => { setEditingItem(item); setIsInvFormOpen(true); }} className="text-indigo-600 font-black text-[10px] uppercase hover:underline">Edit</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === 'reports' && (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-bottom-10 duration-500">
+            <div className="bg-indigo-600 p-12 rounded-[3rem] text-white text-center shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
+              <h2 className="text-3xl font-black mb-4">AI Business Auditor</h2>
+              <p className="text-indigo-100 font-medium mb-8 max-w-lg mx-auto">Gemini analyzes your real-time sales data to suggest inventory optimizations and profit boosters.</p>
+              <button onClick={runAIAnalysis} disabled={isAnalyzing} className="px-8 py-4 bg-white text-indigo-600 font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl hover:bg-slate-50 transition-all disabled:opacity-50">
+                {isAnalyzing ? 'Processing Intelligence...' : 'Generate AI Business Audit'}
+              </button>
+            </div>
+            {aiAnalysis && (
+              <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-sm animate-in zoom-in-95 duration-500">
+                <div className="flex items-center gap-2 mb-6 text-indigo-600"><span className="text-xl">🤖</span> <h3 className="text-[10px] font-black uppercase tracking-widest">Gemini Analysis Result</h3></div>
+                <div className="prose prose-indigo max-w-none text-slate-600 font-medium whitespace-pre-wrap leading-relaxed">{aiAnalysis}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === 'settings' && (
+          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <h3 className="text-lg font-black text-slate-900 mb-6 uppercase tracking-tight">Business Configuration</h3>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Order Status Workflow</label>
+                  <div className="flex flex-wrap gap-2">
+                    {statuses.map(s => <span key={s} className="px-3 py-1.5 bg-slate-50 text-slate-600 text-[10px] font-bold rounded-lg border border-slate-100">{s}</span>)}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Product Categories</label>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map(c => <span key={c} className="px-3 py-1.5 bg-slate-50 text-indigo-600 text-[10px] font-bold rounded-lg border border-slate-100">{c}</span>)}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
 
-      {/* Sharing Modal */}
+      {/* Shared Modals */}
       {sharingUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-8 bg-indigo-600 text-white">
-              <h3 className="text-xl font-black">Context Sync</h3>
-              <p className="text-xs opacity-70 mt-1">Initializing workspace for: {sharingUser.email}</p>
-            </div>
+            <div className="p-8 bg-indigo-600 text-white"><h3 className="text-xl font-black">Admin Sync Portal</h3><p className="text-xs opacity-70 mt-1">Copying context to: {sharingUser.email}</p></div>
             <div className="p-8 space-y-6">
-              <p className="text-xs font-bold text-slate-500">Push following data structures to their account:</p>
+              <p className="text-xs font-bold text-slate-500">Select modules to push:</p>
               <div className="space-y-3">
-                <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
-                  <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={shareConfig.inventory} onChange={e => setShareConfig({...shareConfig, inventory: e.target.checked})} />
-                  <div>
-                    <span className="block text-sm font-black text-slate-800">Inventory Catalog</span>
-                    <span className="text-[10px] text-slate-400">All products, SKU IDs, and purchase costs</span>
-                  </div>
-                </label>
-                <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
-                  <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={shareConfig.orders} onChange={e => setShareConfig({...shareConfig, orders: e.target.checked})} />
-                  <div>
-                    <span className="block text-sm font-black text-slate-800">Order Streams</span>
-                    <span className="text-[10px] text-slate-400">Current active and settled order history</span>
-                  </div>
-                </label>
+                {['Inventory', 'Orders'].map(type => (
+                  <label key={type} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
+                    <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={(shareConfig as any)[type.toLowerCase()]} onChange={e => setShareConfig({...shareConfig, [type.toLowerCase()]: e.target.checked})} />
+                    <span className="text-sm font-black text-slate-800">{type} Records</span>
+                  </label>
+                ))}
               </div>
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setSharingUser(null)} className="flex-1 py-4 text-slate-400 font-black text-[10px] uppercase">Cancel</button>
-                <button 
-                  onClick={handleShareSubmit}
-                  disabled={isSharingData}
-                  className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {isSharingData ? 'Syncing...' : 'Start Data Push'}
-                </button>
+                <button onClick={handleShareSubmit} disabled={isSharingData} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50">{isSharingData ? 'Syncing...' : 'Initialize Sync'}</button>
               </div>
             </div>
           </div>
@@ -400,7 +496,7 @@ const App: React.FC = () => {
       )}
 
       {isInvFormOpen && (
-        <InventoryForm onAdd={async i => { await dbService.saveInventoryItem(i); loadData(); }} onUpdate={async i => { /* update logic */ }} onClose={() => setIsInvFormOpen(false)} inventory={inventory} categories={categories} initialData={editingItem} />
+        <InventoryForm onAdd={async i => { await dbService.saveInventoryItem(i); loadData(); }} onUpdate={async i => { /* update db */ loadData(); }} onClose={() => setIsInvFormOpen(false)} inventory={inventory} categories={categories} initialData={editingItem} />
       )}
     </div>
   );
