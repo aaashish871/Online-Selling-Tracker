@@ -1,12 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Order, InventoryItem, MonthlyReport } from './types.ts';
+import { Order, InventoryItem } from './types.ts';
 import { INITIAL_STATUSES, CATEGORIES } from './constants.tsx';
 import StatsCard from './components/StatsCard.tsx';
 import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
 import { getAIAnalysis } from './services/geminiService.ts';
 import { dbService } from './services/dbService.ts';
+import { User } from '@supabase/supabase-js';
 import { 
   BarChart, 
   Bar, 
@@ -15,7 +16,6 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  Cell,
   AreaChart,
   Area
 } from 'recharts';
@@ -23,82 +23,118 @@ import {
 type ViewMode = 'dashboard' | 'orders' | 'inventory' | 'reports' | 'settings';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
+
   const [view, setView] = useState<ViewMode>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   
-  // Dynamic Settings State
   const [statuses, setStatuses] = useState<string[]>(INITIAL_STATUSES);
   const [categories, setCategories] = useState<string[]>(CATEGORIES);
-  const [newCatInput, setNewCatInput] = useState('');
-  const [newStatusInput, setNewStatusInput] = useState('');
   const [editingIndex, setEditingIndex] = useState<{type: 'cat' | 'status', index: number} | null>(null);
   const [editValue, setEditValue] = useState('');
 
-  // Orders Filter State
   const [orderMonthFilter, setOrderMonthFilter] = useState<string>('all');
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
 
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [aiInsights, setAiInsights] = useState<string>('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isTableMissing, setIsTableMissing] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(false);
+  const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
   const [returnModalOrder, setReturnModalOrder] = useState<Order | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   const isDbConfigured = dbService.isConfigured();
 
-  const loadData = async () => {
-    if (!isDbConfigured) {
-      setIsLoading(false);
-      return;
+  // Handle Authentication Session
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const currentUser = await dbService.getCurrentUser();
+        setUser(currentUser);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+    const { user: loggedInUser, error } = await dbService.login(email, password);
+    if (error) {
+      setAuthError(error.message);
+      setAuthLoading(false);
+    } else {
+      setUser(loggedInUser);
+      setAuthLoading(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await dbService.logout();
+    setUser(null);
+    setOrders([]);
+    setInventory([]);
+    setView('dashboard');
+  };
+
+  const loadData = async () => {
+    if (!user || !isDbConfigured) return;
+    setIsLoading(true);
+    setDbErrorMessage(null);
     try {
       const [fetchedOrders, fetchedInventory] = await Promise.all([
         dbService.getOrders(),
         dbService.getInventory()
       ]);
-      // Sort orders Ascending by date as requested
       const sortedOrders = (fetchedOrders || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setOrders(sortedOrders);
       setInventory(fetchedInventory || []);
-      setIsTableMissing(false);
     } catch (error: any) {
       console.error("Database error", error);
-      if (error.message?.includes('osot_')) setIsTableMissing(true);
+      if (error.message === 'SCHEMA_MISSING_USER_ID') {
+        setDbErrorMessage("MISSING_USER_ID");
+      } else {
+        setDbErrorMessage(error.message || "An unexpected database error occurred.");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, [isDbConfigured]);
+    if (user) loadData();
+  }, [user]);
+
+  const handleClaimLegacyData = async () => {
+    if (!confirm("This will attempt to assign all 'orphaned' records (data with no owner) to your account. Proceed?")) return;
+    setIsMigrating(true);
+    const result = await dbService.claimLegacyData();
+    setIsMigrating(false);
+    if (result.success) {
+      alert("Success! Records updated. Refreshing dashboard...");
+      loadData();
+    } else {
+      alert(`Migration failed: ${result.error || 'Check SQL console'}. You might need to run the SQL command provided in the setup screen.`);
+    }
+  };
 
   const stats = useMemo(() => {
     const settledOrders = orders.filter(o => o.status === 'Settled');
     const revenue = settledOrders.reduce((sum, o) => sum + (Number(o.settledAmount) || 0), 0);
     const totalSettledProfit = settledOrders.reduce((sum, o) => sum + (Number(o.profit) || 0), 0);
-    
-    const activeReturnLosses = orders
-      .filter(o => o.status === 'Returned')
-      .reduce((sum, o) => {
-        if (o.returnType === 'Customer' && o.claimStatus !== 'Approved') {
-          return sum + (Number(o.lossAmount) || 0);
-        }
-        return sum;
-      }, 0);
-
+    const activeReturnLosses = orders.filter(o => o.status === 'Returned' && o.claimStatus !== 'Approved').reduce((sum, o) => sum + (Number(o.lossAmount) || 0), 0);
     const netProfit = totalSettledProfit - activeReturnLosses;
-    return {
-      totalRevenue: revenue,
-      totalProfit: netProfit,
-      avgMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
-      orderCount: orders.length
-    };
+    return { totalRevenue: revenue, totalProfit: netProfit, avgMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0, orderCount: orders.length };
   }, [orders]);
 
   const monthlyData = useMemo(() => {
@@ -106,17 +142,12 @@ const App: React.FC = () => {
     orders.forEach(o => {
       const month = o.date.substring(0, 7);
       if (!map[month]) map[month] = { month, revenue: 0, profit: 0 };
-      if (o.status === 'Settled') {
-        map[month].revenue += Number(o.settledAmount);
-        map[month].profit += Number(o.profit);
-      } else if (o.status === 'Returned' && o.claimStatus !== 'Approved') {
-        map[month].profit -= Number(o.lossAmount);
-      }
+      if (o.status === 'Settled') { map[month].revenue += Number(o.settledAmount); map[month].profit += Number(o.profit); }
+      else if (o.status === 'Returned' && o.claimStatus !== 'Approved') { map[month].profit -= Number(o.lossAmount); }
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
   }, [orders]);
 
-  // Derived Filtering for Orders View
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
       const monthMatches = orderMonthFilter === 'all' || o.date.startsWith(orderMonthFilter);
@@ -131,138 +162,107 @@ const App: React.FC = () => {
     return Array.from(months).sort();
   }, [orders]);
 
-  // Status Summary Cards - Sorted by count DESCENDING
   const sortedStatusSummary = useMemo(() => {
-    const summary = statuses.map(s => {
-      const count = orders.filter(o => o.status === s).length;
-      return { name: s, count };
-    });
-    // Sort by count descending, then by original status order if counts are equal
+    const summary = statuses.map(s => ({ name: s, count: orders.filter(o => o.status === s).length }));
     return summary.sort((a, b) => b.count - a.count);
   }, [orders, statuses]);
 
-  // Inventory Logic
+  // Inventory/Order CRUD logic with User scoping
   const addInvItem = async (item: InventoryItem) => {
     setIsSyncing(true);
-    try {
-      await dbService.saveInventoryItem(item);
-      setInventory(prev => [item, ...prev]);
-    } finally { setIsSyncing(false); }
+    try { await dbService.saveInventoryItem(item); setInventory(prev => [item, ...prev]); } finally { setIsSyncing(false); }
   };
-
   const updateInvItem = async (item: InventoryItem) => {
     setIsSyncing(true);
-    try {
-      await dbService.updateInventoryItem(item);
-      setInventory(prev => prev.map(i => i.id === item.id ? item : i));
-    } finally { setIsSyncing(false); }
+    try { await dbService.updateInventoryItem(item); setInventory(prev => prev.map(i => i.id === item.id ? item : i)); } finally { setIsSyncing(false); }
   };
-
   const deleteInvItem = async (id: string) => {
-    if (!confirm("Delete product from inventory?")) return;
+    if (!confirm("Delete product?")) return;
     setIsSyncing(true);
-    try {
-      await dbService.deleteInventoryItem(id);
-      setInventory(prev => prev.filter(i => i.id !== id));
-    } finally { setIsSyncing(false); }
+    try { await dbService.deleteInventoryItem(id); setInventory(prev => prev.filter(i => i.id !== id)); } finally { setIsSyncing(false); }
   };
-
-  // Order Logic
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     const orderToUpdate = orders.find(o => o.id === orderId);
     if (!orderToUpdate) return;
-    if (newStatus === 'Returned') {
-      setReturnModalOrder({ ...orderToUpdate, status: newStatus, returnType: orderToUpdate.returnType || 'Courier', claimStatus: orderToUpdate.claimStatus || 'Pending' });
-      return;
-    }
+    if (newStatus === 'Returned') { setReturnModalOrder({ ...orderToUpdate, status: newStatus, returnType: orderToUpdate.returnType || 'Courier', claimStatus: orderToUpdate.claimStatus || 'Pending' }); return; }
     const updatedOrder = { ...orderToUpdate, status: newStatus };
     setIsSyncing(true);
-    try {
-      await dbService.updateOrder(updatedOrder);
-      setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
-    } finally { setIsSyncing(false); }
+    try { await dbService.updateOrder(updatedOrder); setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o)); } finally { setIsSyncing(false); }
   };
-
   const handleReturnDetailSubmit = async (details: Order) => {
     setIsSyncing(true);
-    try {
-      await dbService.updateOrder(details);
-      setOrders(prev => prev.map(o => o.id === details.id ? details : o));
-      setReturnModalOrder(null);
-    } finally { setIsSyncing(false); }
+    try { await dbService.updateOrder(details); setOrders(prev => prev.map(o => o.id === details.id ? details : o)); setReturnModalOrder(null); } finally { setIsSyncing(false); }
   };
-
   const addOrder = async (order: Order) => {
     setIsSyncing(true);
-    try {
-      await dbService.saveOrder(order);
-      setOrders(prev => [...prev, order].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-    } finally { setIsSyncing(false); }
+    try { await dbService.saveOrder(order); setOrders(prev => [...prev, order].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())); } finally { setIsSyncing(false); }
   };
-
   const deleteOrder = async (id: string) => {
-    if (!confirm("Delete this order?")) return;
+    if (!confirm("Delete order?")) return;
     setIsSyncing(true);
-    try {
-      await dbService.deleteOrder(id);
-      setOrders(prev => prev.filter(o => o.id !== id));
-    } finally { setIsSyncing(false); }
+    try { await dbService.deleteOrder(id); setOrders(prev => prev.filter(o => o.id !== id)); } finally { setIsSyncing(false); }
   };
 
-  const runAnalysis = async () => {
-    setIsAnalyzing(true);
-    const result = await getAIAnalysis(orders);
-    setAiInsights(result);
-    setIsAnalyzing(false);
-  };
+  // Login View
+  if (!user && !authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-slate-100 animate-in fade-in zoom-in duration-500">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white font-black text-4xl shadow-xl mx-auto mb-6">O</div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Order Analyzer</h1>
+            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-1">Ahuja Edition - Secure Login</p>
+          </div>
+          
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email or Phone</label>
+              <input 
+                type="text" 
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 focus:ring-indigo-100 transition-all" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Password</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 focus:ring-indigo-100 transition-all pr-14" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+                >
+                  {showPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" /></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            {authError && <p className="text-rose-500 text-[10px] font-black uppercase text-center">{authError}</p>}
+            <button 
+              type="submit" 
+              className="w-full py-5 bg-indigo-600 text-white font-black uppercase text-xs tracking-[0.2em] rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all"
+            >
+              Enter Dashboard
+            </button>
+          </form>
+          <div className="mt-8 text-center"><p className="text-[9px] font-bold text-slate-400">Secure AES-256 Cloud Synchronization Active</p></div>
+        </div>
+      </div>
+    );
+  }
 
-  // --- Settings Management ---
-  const handleAddItem = (type: 'cat' | 'status') => {
-    const input = type === 'cat' ? newCatInput : newStatusInput;
-    const list = type === 'cat' ? categories : statuses;
-    if (!input.trim() || list.includes(input.trim())) return;
-    
-    if (type === 'cat') {
-      setCategories([...categories, input.trim()]);
-      setNewCatInput('');
-    } else {
-      setStatuses([...statuses, input.trim()]);
-      setNewStatusInput('');
-    }
-  };
-
-  const handleDeleteItem = (type: 'cat' | 'status', index: number) => {
-    if (!confirm(`Are you sure you want to delete this ${type === 'cat' ? 'category' : 'status'}?`)) return;
-    if (type === 'cat') {
-      setCategories(categories.filter((_, i) => i !== index));
-    } else {
-      setStatuses(statuses.filter((_, i) => i !== index));
-    }
-  };
-
-  const handleStartEdit = (type: 'cat' | 'status', index: number, value: string) => {
-    setEditingIndex({type, index});
-    setEditValue(value);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingIndex || !editValue.trim()) {
-      setEditingIndex(null);
-      return;
-    }
-    if (editingIndex.type === 'cat') {
-      const newList = [...categories];
-      newList[editingIndex.index] = editValue.trim();
-      setCategories(newList);
-    } else {
-      const newList = [...statuses];
-      newList[editingIndex.index] = editValue.trim();
-      setStatuses(newList);
-    }
-    setEditingIndex(null);
-  };
-
-  if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (authLoading || isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
@@ -274,12 +274,17 @@ const App: React.FC = () => {
               <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">O</div>
               <div>
                 <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none">Order Analyzer</h1>
-                <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">Ahuja Edition</span>
+                <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">{user?.email?.split('@')[0]} Edition</span>
               </div>
             </div>
-            <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase flex items-center gap-1.5 ${isSyncing ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`}></div>
-              {isSyncing ? 'Syncing' : 'Live'}
+            <div className="flex items-center gap-4">
+              <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase flex items-center gap-1.5 ${isSyncing ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`}></div>
+                {isSyncing ? 'Syncing' : 'Live'}
+              </div>
+              <button onClick={handleLogout} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              </button>
             </div>
           </div>
           <div className="flex overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide gap-1 no-scrollbar">
@@ -293,11 +298,27 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-grow max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24">
-        {isTableMissing ? (
-           <div className="text-center py-20 bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100">
+        {dbErrorMessage ? (
+           <div className="text-center py-10 bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 max-w-2xl mx-auto">
              <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">⚠️</div>
-             <h2 className="text-2xl font-black text-slate-800 mb-4">Database Error</h2>
-             <button onClick={() => window.location.reload()} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs">Retry</button>
+             <h2 className="text-2xl font-black text-slate-800 mb-4">Database Setup Required</h2>
+             
+             {dbErrorMessage === "MISSING_USER_ID" ? (
+               <div className="space-y-4">
+                 <p className="text-sm font-medium text-slate-600 mb-4 text-left">Your Supabase tables are missing the <code className="bg-slate-100 px-1 rounded">user_id</code> column. Please run this SQL in your Supabase SQL Editor:</p>
+                 <pre className="bg-slate-900 text-slate-100 p-4 rounded-xl text-[10px] font-mono text-left overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner">
+{`ALTER TABLE osot_inventory ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) DEFAULT auth.uid();
+ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) DEFAULT auth.uid();
+ALTER TABLE osot_inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE osot_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();`}
+                 </pre>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">After running the SQL, click the button below.</p>
+               </div>
+             ) : (
+               <p className="text-sm text-slate-500 mb-6">{dbErrorMessage}</p>
+             )}
+             
+             <button onClick={loadData} className="mt-8 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Retry Connection</button>
            </div>
         ) : (
           <>
@@ -309,6 +330,14 @@ const App: React.FC = () => {
                   <StatsCard label="Margin (%)" value={`${stats.avgMargin.toFixed(1)}%`} color="bg-amber-500" icon="%" />
                   <StatsCard label="Total Orders" value={stats.orderCount} color="bg-slate-800" icon="📦" />
                 </div>
+                
+                {orders.length === 0 && !isLoading && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between">
+                    <p className="text-xs font-bold text-amber-700">Missing your old data? Since the security update, you need to sync your legacy records. Check the Settings tab.</p>
+                    <button onClick={() => setView('settings')} className="text-[10px] font-black uppercase text-indigo-600">Go to Settings</button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   <div className="lg:col-span-4"><OrderForm onAdd={addOrder} inventory={inventory} statuses={statuses} /></div>
                   <div className="lg:col-span-8 space-y-6">
@@ -336,7 +365,6 @@ const App: React.FC = () => {
 
             {view === 'orders' && (
               <div className="space-y-6 animate-in slide-in-from-bottom-10">
-                {/* Status Summary Mini Cards - Now Sorted by Count DESC */}
                 <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
                   {sortedStatusSummary.map(s => (
                     <div key={s.name} className="bg-white border border-slate-100 px-4 py-3 rounded-2xl min-w-[120px] shadow-sm flex flex-col gap-1 transition-all hover:border-indigo-200 hover:shadow-md">
@@ -348,23 +376,12 @@ const App: React.FC = () => {
 
                 <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm">
                   <h3 className="text-lg font-black text-slate-800 tracking-tight">Order Management</h3>
-                  
-                  {/* Filters */}
                   <div className="flex gap-2 w-full md:w-auto overflow-x-auto no-scrollbar pb-1 md:pb-0">
-                    <select 
-                      value={orderMonthFilter} 
-                      onChange={(e) => setOrderMonthFilter(e.target.value)}
-                      className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                    >
+                    <select value={orderMonthFilter} onChange={(e) => setOrderMonthFilter(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 outline-none transition-all">
                       <option value="all">All Months</option>
                       {uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    
-                    <select 
-                      value={orderStatusFilter} 
-                      onChange={(e) => setOrderStatusFilter(e.target.value)}
-                      className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                    >
+                    <select value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 outline-none transition-all">
                       <option value="all">All Statuses</option>
                       {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -374,7 +391,7 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
                   {filteredOrders.length === 0 ? (
                     <div className="bg-white p-12 text-center rounded-[2rem] border border-dashed border-slate-200">
-                       <p className="text-sm font-bold text-slate-400">No orders match these filters.</p>
+                       <p className="text-sm font-bold text-slate-400">No orders found.</p>
                        <button onClick={() => { setOrderMonthFilter('all'); setOrderStatusFilter('all'); }} className="mt-4 text-xs font-black text-indigo-600 uppercase">Clear All Filters</button>
                     </div>
                   ) : (
@@ -397,9 +414,7 @@ const App: React.FC = () => {
                             </select>
                           </div>
                         </div>
-                        {o.status === 'Returned' && (
-                          <div className="mt-4"><button onClick={() => setReturnModalOrder(o)} className="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] hover:bg-indigo-100 transition-all">Edit Return Data</button></div>
-                        )}
+                        {o.status === 'Returned' && <div className="mt-4"><button onClick={() => setReturnModalOrder(o)} className="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] hover:bg-indigo-100 transition-all">Edit Return Data</button></div>}
                       </div>
                     ))
                   )}
@@ -473,109 +488,45 @@ const App: React.FC = () => {
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-8">System Configuration</h2>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    {/* Category Management */}
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em]">Product Categories</h4>
-                        <span className="text-[10px] font-black text-slate-300">{categories.length} total</span>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {categories.map((c, i) => (
-                          <div key={i} className="group flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:border-indigo-200 hover:bg-white shadow-sm hover:shadow-md">
-                            {editingIndex?.type === 'cat' && editingIndex.index === i ? (
-                              <input 
-                                className="bg-white border border-indigo-500 px-3 py-1 rounded-lg text-sm font-bold text-slate-800 outline-none w-full"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={handleSaveEdit}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()}
-                                autoFocus
-                              />
-                            ) : (
-                              <span className="text-sm font-bold text-slate-700">{c}</span>
-                            )}
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleStartEdit('cat', i, c)} className="p-2 text-indigo-400 hover:text-indigo-600">✎</button>
-                              <button onClick={() => handleDeleteItem('cat', i)} className="p-2 text-rose-300 hover:text-rose-500">✕</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-2">
-                        <div className="relative">
-                          <input 
-                            placeholder="Add new category..."
-                            className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-white font-bold text-sm text-slate-800 focus:ring-4 focus:ring-indigo-100 outline-none shadow-inner"
-                            value={newCatInput}
-                            onChange={(e) => setNewCatInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddItem('cat')}
-                          />
-                          <button onClick={() => handleAddItem('cat')} className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 text-white w-10 h-10 rounded-xl font-bold hover:bg-indigo-700 active:scale-95 shadow-lg shadow-indigo-100 transition-all">
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status Management */}
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-[11px] font-black text-emerald-500 uppercase tracking-[0.2em]">Workflow Statuses</h4>
-                        <span className="text-[10px] font-black text-slate-300">{statuses.length} total</span>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {statuses.map((s, i) => (
-                          <div key={i} className="group flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:border-emerald-200 hover:bg-white shadow-sm hover:shadow-md">
-                            {editingIndex?.type === 'status' && editingIndex.index === i ? (
-                              <input 
-                                className="bg-white border border-emerald-500 px-3 py-1 rounded-lg text-sm font-bold text-slate-800 outline-none w-full"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={handleSaveEdit}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()}
-                                autoFocus
-                              />
-                            ) : (
-                              <span className="text-sm font-bold text-slate-700">{s}</span>
-                            )}
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleStartEdit('status', i, s)} className="p-2 text-emerald-400 hover:text-emerald-600">✎</button>
-                              <button onClick={() => handleDeleteItem('status', i)} className="p-2 text-rose-300 hover:text-rose-500">✕</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-2">
-                        <div className="relative">
-                          <input 
-                            placeholder="Add new status..."
-                            className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-white font-bold text-sm text-slate-800 focus:ring-4 focus:ring-emerald-100 outline-none shadow-inner"
-                            value={newStatusInput}
-                            onChange={(e) => setNewStatusInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddItem('status')}
-                          />
-                          <button onClick={() => handleAddItem('status')} className="absolute right-3 top-1/2 -translate-y-1/2 bg-emerald-500 text-white w-10 h-10 rounded-xl font-bold hover:bg-emerald-600 active:scale-95 shadow-lg shadow-emerald-100 transition-all">
-                            +
-                          </button>
-                        </div>
+                  {/* Migration Tool */}
+                  <div className="mb-12 p-6 bg-indigo-50 border border-indigo-100 rounded-3xl">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">🔄</div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-black text-indigo-900 uppercase tracking-wider mb-1">Data Migration & Recovery</h4>
+                        <p className="text-xs text-indigo-700 font-medium mb-4 leading-relaxed">If you stored orders before creating an account, they are currently hidden. Click below to claim your legacy data and assign it to your new account.</p>
+                        <button 
+                          onClick={handleClaimLegacyData}
+                          disabled={isMigrating}
+                          className="px-6 py-3 bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isMigrating ? 'Processing...' : 'Sync Legacy Data'}
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-12 pt-10 border-t border-slate-100">
-                    <div className="flex items-center justify-between p-6 bg-slate-900 rounded-[2rem] text-white">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-xl">🔌</div>
-                        <div><h4 className="font-black text-sm">Supabase Real-time Database</h4><p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">Storage & Cloud Syncing</p></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between mb-2"><h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em]">Product Categories</h4><span className="text-[10px] font-black text-slate-300">{categories.length} total</span></div>
+                      <div className="space-y-3">
+                        {categories.map((c, i) => (
+                          <div key={i} className="group flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:border-indigo-200 hover:bg-white shadow-sm hover:shadow-md">
+                            {editingIndex?.type === 'cat' && editingIndex.index === i ? <input className="bg-white border border-indigo-500 px-3 py-1 rounded-lg text-sm font-bold text-slate-800 outline-none w-full" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => { if(editingIndex) { const newList = [...categories]; newList[editingIndex.index] = editValue.trim(); setCategories(newList); setEditingIndex(null); } }} autoFocus /> : <span className="text-sm font-bold text-slate-700">{c}</span>}
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setEditingIndex({type: 'cat', index: i}); setEditValue(c); }} className="p-2 text-indigo-400 hover:text-indigo-600">✎</button></div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-500/20">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                        Live Connected
+                    </div>
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between mb-2"><h4 className="text-[11px] font-black text-emerald-500 uppercase tracking-[0.2em]">Workflow Statuses</h4><span className="text-[10px] font-black text-slate-300">{statuses.length} total</span></div>
+                      <div className="space-y-3">
+                        {statuses.map((s, i) => (
+                          <div key={i} className="group flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:border-emerald-200 hover:bg-white shadow-sm hover:shadow-md">
+                            {editingIndex?.type === 'status' && editingIndex.index === i ? <input className="bg-white border border-emerald-500 px-3 py-1 rounded-lg text-sm font-bold text-slate-800 outline-none w-full" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => { if(editingIndex) { const newList = [...statuses]; newList[editingIndex.index] = editValue.trim(); setStatuses(newList); setEditingIndex(null); } }} autoFocus /> : <span className="text-sm font-bold text-slate-700">{s}</span>}
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setEditingIndex({type: 'status', index: i}); setEditValue(s); }} className="p-2 text-emerald-400 hover:text-emerald-600">✎</button></div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -586,7 +537,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Return Modal */}
       {returnModalOrder && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-end md:items-center justify-center p-0 md:p-4">
           <div className="bg-white rounded-t-[3rem] md:rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in slide-in-from-bottom-20 duration-500">
@@ -599,19 +549,6 @@ const App: React.FC = () => {
                 <button onClick={() => setReturnModalOrder({...returnModalOrder, returnType: 'Courier', lossAmount: 0, claimStatus: 'None'})} className={`p-6 rounded-[2.5rem] border-4 transition-all ${returnModalOrder.returnType === 'Courier' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-50 text-slate-400 grayscale'}`}><div className="text-3xl mb-2">🚚</div><div className="text-[11px] font-black uppercase">Courier</div></button>
                 <button onClick={() => setReturnModalOrder({...returnModalOrder, returnType: 'Customer', claimStatus: 'Pending'})} className={`p-6 rounded-[2.5rem] border-4 transition-all ${returnModalOrder.returnType === 'Customer' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-50 text-slate-400 grayscale'}`}><div className="text-3xl mb-2">🏠</div><div className="text-[11px] font-black uppercase">Customer</div></button>
               </div>
-              {returnModalOrder.returnType === 'Customer' && (
-                <div className="space-y-6 animate-in fade-in">
-                  <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
-                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-3 text-center">Actual Loss Amount (₹)</label>
-                    <input type="number" className="w-full p-4 rounded-2xl border border-slate-200 bg-white font-black text-xl text-slate-900 text-center shadow-sm" value={returnModalOrder.lossAmount || ''} onChange={(e) => setReturnModalOrder({...returnModalOrder, lossAmount: parseFloat(e.target.value) || 0})} placeholder="0.00" />
-                  </div>
-                  <div className="flex gap-2">
-                    {(['Pending', 'Approved', 'Rejected'] as const).map(status => (
-                      <button key={status} onClick={() => setReturnModalOrder({...returnModalOrder, claimStatus: status})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase border-4 transition-all ${returnModalOrder.claimStatus === status ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg' : 'border-slate-50 text-slate-400'}`}>{status}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
               <div className="pt-4 flex flex-col md:flex-row gap-4">
                 <button onClick={() => setReturnModalOrder(null)} className="flex-1 py-5 text-slate-400 font-black text-[11px] uppercase tracking-widest order-2 md:order-1">Discard</button>
                 <button onClick={() => handleReturnDetailSubmit(returnModalOrder)} className="flex-1 py-5 bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl order-1 md:order-2 shadow-xl shadow-indigo-100">Save Changes</button>
@@ -622,14 +559,7 @@ const App: React.FC = () => {
       )}
 
       {isInvFormOpen && (
-        <InventoryForm 
-          onAdd={addInvItem} 
-          onUpdate={updateInvItem} 
-          onClose={() => setIsInvFormOpen(false)} 
-          inventory={inventory}
-          categories={categories}
-          initialData={editingItem}
-        />
+        <InventoryForm onAdd={addInvItem} onUpdate={updateInvItem} onClose={() => setIsInvFormOpen(false)} inventory={inventory} categories={categories} initialData={editingItem} />
       )}
     </div>
   );

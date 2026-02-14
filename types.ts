@@ -1,15 +1,15 @@
 
 export interface Order {
   id: string;
+  user_id?: string; // Associated Supabase user UID
   date: string;
   productId: string;
   productName: string;
   category: string;
   listingPrice: number;
-  settledAmount: number; // The amount received in bank
+  settledAmount: number;
   profit: number;
   status: string;
-  // Return Tracking
   returnType?: 'Courier' | 'Customer' | null;
   lossAmount?: number;
   claimStatus?: 'Pending' | 'Approved' | 'Rejected' | 'None';
@@ -17,13 +17,14 @@ export interface Order {
 
 export interface InventoryItem {
   id: string;
+  user_id?: string; // Associated Supabase user UID
   name: string;
   category: string;
   sku: string;
   stockLevel: number;
-  unitCost: number; // Purchasing price
-  retailPrice: number; // Listing price on website
-  bankSettledAmount: number; // Actual amount received in bank
+  unitCost: number;
+  retailPrice: number;
+  bankSettledAmount: number;
   minStockLevel: number;
 }
 
