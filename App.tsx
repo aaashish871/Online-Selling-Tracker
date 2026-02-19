@@ -12,7 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 
-type ViewMode = 'dashboard' | 'orders' | 'inventory' | 'reports' | 'settings' | 'team';
+type ViewMode = 'dashboard' | 'orders' | 'returned' | 'inventory' | 'reports' | 'settings' | 'team';
 
 const TEAM_ROLES = ['Staff', 'Manager', 'Viewer'];
 
@@ -266,7 +266,7 @@ const App: React.FC = () => {
             <button onClick={handleLogout} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors">✕</button>
           </div>
           <div className="flex overflow-x-auto pb-1 gap-1 no-scrollbar">
-            {(['dashboard', 'orders', 'inventory', 'reports', 'settings', 'team'] as ViewMode[]).map(m => {
+            {(['dashboard', 'orders', 'returned', 'inventory', 'reports', 'settings', 'team'] as ViewMode[]).map(m => {
               if (m === 'team' && !isAdmin) return null;
               return (
                 <button key={m} onClick={() => setView(m)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${view === m ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
@@ -372,6 +372,126 @@ const App: React.FC = () => {
                     <Area type="monotone" dataKey="profit" stroke="#10b981" fillOpacity={0.1} fill="#10b981" />
                   </AreaChart>
                 </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === 'returned' && (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatsCard 
+                label="Total Returns" 
+                value={orders.filter(o => o.status === 'Returned').length} 
+                color="bg-rose-500" 
+                icon="🔄" 
+              />
+              <StatsCard 
+                label="Total Loss" 
+                value={`₹${orders.filter(o => o.status === 'Returned').reduce((sum, o) => sum + (o.lossAmount || 0), 0).toLocaleString()}`} 
+                color="bg-slate-800" 
+                icon="📉" 
+              />
+              <StatsCard 
+                label="Pending Claims" 
+                value={orders.filter(o => o.status === 'Returned' && o.claimStatus === 'Pending').length} 
+                color="bg-amber-500" 
+                icon="⏳" 
+              />
+            </div>
+
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-8 border-b border-slate-50">
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Returns Management</h2>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {orders.filter(o => o.status === 'Returned').length} Returned Items
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <tr>
+                      <th className="px-8 py-4">ID</th>
+                      <th className="px-4 py-4">Product</th>
+                      <th className="px-4 py-4">Return Type</th>
+                      <th className="px-4 py-4">Loss Amount</th>
+                      <th className="px-4 py-4">Claim Status</th>
+                      <th className="px-4 py-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {orders.filter(o => o.status === 'Returned').map(o => (
+                      <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-4 font-black text-indigo-600 text-xs">{o.id}</td>
+                        <td className="px-4 py-4 font-bold text-slate-800 text-xs">{o.productName}</td>
+                        <td className="px-4 py-4">
+                          <select 
+                            className="px-3 py-1.5 bg-slate-50 text-slate-700 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200"
+                            value={o.returnType || ''}
+                            onChange={async (e) => {
+                              const val = e.target.value as any;
+                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, returnType: val } : item));
+                              await dbService.updateOrder({ ...o, returnType: val });
+                            }}
+                          >
+                            <option value="">Select Type</option>
+                            <option value="Courier">Courier</option>
+                            <option value="Customer">Customer</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-4 font-bold text-rose-500 text-xs">
+                          <div className="flex items-center gap-1">
+                            <span>₹</span>
+                            <input 
+                              type="number" 
+                              className="w-20 bg-transparent border-b border-slate-200 focus:border-indigo-500 outline-none"
+                              value={o.lossAmount || 0}
+                              onChange={async (e) => {
+                                const val = Number(e.target.value);
+                                setOrders(prev => prev.map(item => item.id === o.id ? { ...item, lossAmount: val } : item));
+                                await dbService.updateOrder({ ...o, lossAmount: val });
+                              }}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <select 
+                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200 ${
+                              o.claimStatus === 'Approved' ? 'bg-emerald-50 text-emerald-600' :
+                              o.claimStatus === 'Rejected' ? 'bg-rose-50 text-rose-600' :
+                              o.claimStatus === 'Pending' ? 'bg-amber-50 text-amber-600' :
+                              'bg-slate-50 text-slate-600'
+                            }`}
+                            value={o.claimStatus || 'None'}
+                            onChange={async (e) => {
+                              const val = e.target.value as any;
+                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, claimStatus: val } : item));
+                              await dbService.updateOrder({ ...o, claimStatus: val });
+                            }}
+                          >
+                            <option value="None">None</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Rejected">Rejected</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-4">
+                          <button 
+                            onClick={() => setView('orders')}
+                            className="text-indigo-600 font-black text-[10px] uppercase hover:underline"
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {orders.filter(o => o.status === 'Returned').length === 0 && (
+                  <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">
+                    No returned items found
+                  </div>
+                )}
               </div>
             </div>
           </div>
