@@ -43,7 +43,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
       listingPrice: selectedProduct.retailPrice,
       settledAmount: settled,
       profit: profit,
-      status: formData.status
+      status: formData.status,
+      receivedStatus: 'Pending'
     };
 
     onAdd(newOrder);

@@ -13,6 +13,7 @@ export interface Order {
   returnType?: 'Courier' | 'Customer' | null;
   lossAmount?: number;
   claimStatus?: 'Pending' | 'Approved' | 'Rejected' | 'None';
+  receivedStatus?: 'Pending' | 'Received' | 'Not Received';
 }
 
 export interface InventoryItem {

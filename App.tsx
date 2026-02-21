@@ -379,7 +379,7 @@ const App: React.FC = () => {
 
         {view === 'returned' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <StatsCard 
                 label="Total Returns" 
                 value={orders.filter(o => o.status === 'Returned').length} 
@@ -398,6 +398,12 @@ const App: React.FC = () => {
                 color="bg-amber-500" 
                 icon="⏳" 
               />
+              <StatsCard 
+                label="Not Received" 
+                value={orders.filter(o => o.status === 'Returned' && o.receivedStatus === 'Not Received').length} 
+                color="bg-rose-600" 
+                icon="📦" 
+              />
             </div>
 
             <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
@@ -414,6 +420,7 @@ const App: React.FC = () => {
                       <th className="px-8 py-4">ID</th>
                       <th className="px-4 py-4">Product</th>
                       <th className="px-4 py-4">Return Type</th>
+                      <th className="px-4 py-4">Received Status</th>
                       <th className="px-4 py-4">Loss Amount</th>
                       <th className="px-4 py-4">Claim Status</th>
                       <th className="px-4 py-4">Actions</th>
@@ -437,6 +444,25 @@ const App: React.FC = () => {
                             <option value="">Select Type</option>
                             <option value="Courier">Courier</option>
                             <option value="Customer">Customer</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-4">
+                          <select 
+                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200 ${
+                              o.receivedStatus === 'Received' ? 'bg-emerald-50 text-emerald-600' :
+                              o.receivedStatus === 'Not Received' ? 'bg-rose-50 text-rose-600' :
+                              'bg-slate-50 text-slate-600'
+                            }`}
+                            value={o.receivedStatus || 'Pending'}
+                            onChange={async (e) => {
+                              const val = e.target.value as any;
+                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, receivedStatus: val } : item));
+                              await dbService.updateOrder({ ...o, receivedStatus: val });
+                            }}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Received">Received</option>
+                            <option value="Not Received">Not Received</option>
                           </select>
                         </td>
                         <td className="px-4 py-4 font-bold text-rose-500 text-xs">
