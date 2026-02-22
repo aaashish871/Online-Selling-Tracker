@@ -113,14 +113,22 @@ export const dbService = {
     if (!supabase) return;
     const user = await this.getCurrentUser();
     if (!user) return;
-    await supabase.from('osot_inventory').insert([{ ...item, user_id: user.id }]);
+    const { error } = await supabase.from('osot_inventory').insert([{ ...item, user_id: user.id }]);
+    if (error) throw error;
+  },
+
+  async updateInventoryItem(item: InventoryItem): Promise<void> {
+    if (!supabase) return;
+    const { error } = await supabase.from('osot_inventory').update(item).eq('id', item.id);
+    if (error) throw error;
   },
 
   async getOrders(): Promise<Order[]> {
     if (!supabase) return [];
     const user = await this.getCurrentUser();
     if (!user) return [];
-    const { data } = await supabase.from('osot_orders').select('*').eq('user_id', user.id).order('date', { ascending: false });
+    const { data, error } = await supabase.from('osot_orders').select('*').eq('user_id', user.id).order('date', { ascending: false });
+    if (error) throw error;
     return data as Order[];
   },
 
@@ -128,11 +136,13 @@ export const dbService = {
     if (!supabase) return;
     const user = await this.getCurrentUser();
     if (!user) return;
-    await supabase.from('osot_orders').insert([{ ...order, user_id: user.id }]);
+    const { error } = await supabase.from('osot_orders').insert([{ ...order, user_id: user.id }]);
+    if (error) throw error;
   },
 
   async updateOrder(order: Order): Promise<void> {
     if (!supabase) return;
-    await supabase.from('osot_orders').update(order).eq('id', order.id);
+    const { error } = await supabase.from('osot_orders').update(order).eq('id', order.id);
+    if (error) throw error;
   }
 };

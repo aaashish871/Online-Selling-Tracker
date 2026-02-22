@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { InventoryItem } from '../types.ts';
 
 interface InventoryFormProps {
-  onAdd: (item: InventoryItem) => void;
-  onUpdate: (item: InventoryItem) => void;
+  onAdd: (item: InventoryItem) => Promise<void>;
+  onUpdate: (item: InventoryItem) => Promise<void>;
   onClose: () => void;
   initialData?: InventoryItem | null;
   inventory: InventoryItem[];
@@ -12,6 +12,7 @@ interface InventoryFormProps {
 }
 
 const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose, initialData, inventory, categories }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: categories[0] || '',
@@ -63,7 +64,7 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
     setError(null);
   }, [initialData, categories]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -78,24 +79,31 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
       return;
     }
     
-    const item: InventoryItem = {
-      id: initialData?.id || `INV-${Math.floor(Math.random() * 10000)}`,
-      name: formData.name,
-      category: formData.category,
-      sku: formData.sku.trim(),
-      stockLevel: parseInt(formData.stockLevel) || 0,
-      unitCost: parseFloat(formData.unitCost) || 0,
-      retailPrice: parseFloat(formData.retailPrice) || 0,
-      bankSettledAmount: parseFloat(formData.bankSettledAmount) || 0,
-      minStockLevel: parseInt(formData.minStockLevel) || 0,
-    };
+    setIsSubmitting(true);
+    try {
+      const item: InventoryItem = {
+        id: initialData?.id || `INV-${Math.floor(Math.random() * 10000)}`,
+        name: formData.name,
+        category: formData.category,
+        sku: formData.sku.trim(),
+        stockLevel: parseInt(formData.stockLevel) || 0,
+        unitCost: parseFloat(formData.unitCost) || 0,
+        retailPrice: parseFloat(formData.retailPrice) || 0,
+        bankSettledAmount: parseFloat(formData.bankSettledAmount) || 0,
+        minStockLevel: parseInt(formData.minStockLevel) || 0,
+      };
 
-    if (initialData) {
-      onUpdate(item);
-    } else {
-      onAdd(item);
+      if (initialData) {
+        await onUpdate(item);
+      } else {
+        await onAdd(item);
+      }
+      onClose();
+    } catch (err: any) {
+      setError("Failed to save item: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   return (
@@ -236,9 +244,17 @@ const InventoryForm: React.FC<InventoryFormProps> = ({ onAdd, onUpdate, onClose,
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
+              disabled={isSubmitting}
+              className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {initialData ? 'Update Item' : 'Add to Inventory'}
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Saving...
+                </>
+              ) : (
+                initialData ? 'Update Item' : 'Add to Inventory'
+              )}
             </button>
           </div>
         </form>

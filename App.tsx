@@ -96,9 +96,9 @@ const App: React.FC = () => {
     setView('dashboard');
   };
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!user) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const [fetchedOrders, fetchedInventory] = await Promise.all([
         dbService.getOrders(),
@@ -113,7 +113,7 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error("Data load error:", error);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -246,7 +246,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (authLoading || isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (authLoading || (isLoading && orders.length === 0)) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
@@ -361,7 +361,24 @@ const App: React.FC = () => {
               <StatsCard label="Total Orders" value={stats.count} color="bg-slate-800" icon="📦" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4"><OrderForm onAdd={async o => { await dbService.saveOrder(o); loadData(); }} inventory={inventory} statuses={statuses} /></div>
+              <div className="lg:col-span-4">
+                <OrderForm 
+                  onAdd={async o => { 
+                    // Optimistic update
+                    setOrders(prev => [o, ...prev]);
+                    try {
+                      await dbService.saveOrder(o); 
+                      await loadData(true); 
+                    } catch (err) {
+                      // Rollback on error
+                      setOrders(prev => prev.filter(item => item.id !== o.id));
+                      throw err;
+                    }
+                  }} 
+                  inventory={inventory} 
+                  statuses={statuses} 
+                />
+              </div>
               <div className="lg:col-span-8 bg-white p-6 rounded-[2rem] border border-slate-100 h-[350px]">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Sales Trend</h3>
                 <ResponsiveContainer width="100%" height="100%">
@@ -731,7 +748,33 @@ const App: React.FC = () => {
       )}
 
       {isInvFormOpen && (
-        <InventoryForm onAdd={async i => { await dbService.saveInventoryItem(i); loadData(); }} onUpdate={async i => { /* update db */ loadData(); }} onClose={() => setIsInvFormOpen(false)} inventory={inventory} categories={categories} initialData={editingItem} />
+        <InventoryForm 
+          onAdd={async i => { 
+            setInventory(prev => [i, ...prev]);
+            try {
+              await dbService.saveInventoryItem(i); 
+              await loadData(true); 
+            } catch (err) {
+              setInventory(prev => prev.filter(item => item.id !== i.id));
+              throw err;
+            }
+          }} 
+          onUpdate={async i => { 
+            const oldItem = inventory.find(item => item.id === i.id);
+            setInventory(prev => prev.map(item => item.id === i.id ? i : item));
+            try {
+              await dbService.updateInventoryItem(i); 
+              await loadData(true); 
+            } catch (err) {
+              if (oldItem) setInventory(prev => prev.map(item => item.id === i.id ? oldItem : item));
+              throw err;
+            }
+          }} 
+          onClose={() => setIsInvFormOpen(false)} 
+          inventory={inventory} 
+          categories={categories} 
+          initialData={editingItem} 
+        />
       )}
     </div>
   );

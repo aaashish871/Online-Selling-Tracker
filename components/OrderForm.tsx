@@ -3,12 +3,13 @@ import React, { useState } from 'react';
 import { Order, InventoryItem } from '../types.ts';
 
 interface OrderFormProps {
-  onAdd: (order: Order) => void;
+  onAdd: (order: Order) => Promise<void>;
   inventory: InventoryItem[];
   statuses: string[];
 }
 
 const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     id: '',
     date: new Date().toISOString().split('T')[0],
@@ -18,7 +19,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
 
   const selectedProduct = inventory.find(i => i.id === formData.productId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) {
       alert("Please select a product from inventory.");
@@ -30,31 +31,38 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
       return;
     }
 
-    const settled = selectedProduct.bankSettledAmount;
-    const cost = selectedProduct.unitCost;
-    const profit = settled - cost;
+    setIsSubmitting(true);
+    try {
+      const settled = selectedProduct.bankSettledAmount;
+      const cost = selectedProduct.unitCost;
+      const profit = settled - cost;
 
-    const newOrder: Order = {
-      id: formData.id,
-      date: formData.date,
-      productId: formData.productId,
-      productName: selectedProduct.name,
-      category: selectedProduct.category,
-      listingPrice: selectedProduct.retailPrice,
-      settledAmount: settled,
-      profit: profit,
-      status: formData.status,
-      receivedStatus: 'Pending'
-    };
+      const newOrder: Order = {
+        id: formData.id,
+        date: formData.date,
+        productId: formData.productId,
+        productName: selectedProduct.name,
+        category: selectedProduct.category,
+        listingPrice: selectedProduct.retailPrice,
+        settledAmount: settled,
+        profit: profit,
+        status: formData.status,
+        receivedStatus: 'Pending'
+      };
 
-    onAdd(newOrder);
-    
-    setFormData({
-      id: '',
-      date: new Date().toISOString().split('T')[0],
-      productId: '',
-      status: statuses[0] || ''
-    });
+      await onAdd(newOrder);
+      
+      setFormData({
+        id: '',
+        date: new Date().toISOString().split('T')[0],
+        productId: '',
+        status: statuses[0] || ''
+      });
+    } catch (error: any) {
+      alert("Failed to save order: " + (error.message || "Unknown error"));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -136,9 +144,17 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
 
         <button
           type="submit"
-          className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 group active:scale-[0.98] mt-2"
+          disabled={isSubmitting}
+          className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 group active:scale-[0.98] mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Record Order
+          {isSubmitting ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              Recording...
+            </>
+          ) : (
+            'Record Order'
+          )}
         </button>
       </form>
     </div>
