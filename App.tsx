@@ -215,12 +215,17 @@ const App: React.FC = () => {
 
   // Status Counts for Cards - Sorted by Highest
   const orderStatusSummary = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const summary: Record<string, { count: number, totalProfit: number, totalSettled: number }> = {};
     orders.forEach(o => {
-      counts[o.status] = (counts[o.status] || 0) + 1;
+      if (!summary[o.status]) {
+        summary[o.status] = { count: 0, totalProfit: 0, totalSettled: 0 };
+      }
+      summary[o.status].count += 1;
+      summary[o.status].totalProfit += (Number(o.profit) || 0);
+      summary[o.status].totalSettled += (Number(o.settledAmount) || 0);
     });
-    return Object.entries(counts)
-      .map(([status, count]) => ({ status, count }))
+    return Object.entries(summary)
+      .map(([status, data]) => ({ status, ...data }))
       .sort((a, b) => b.count - a.count);
   }, [orders]);
 
@@ -661,7 +666,7 @@ const App: React.FC = () => {
           <div className="space-y-6 animate-in fade-in duration-500">
             {/* Status Summary Cards - Sorted by Highest Count */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {orderStatusSummary.map(({ status, count }) => (
+              {orderStatusSummary.map(({ status, count, totalProfit, totalSettled }) => (
                 <div 
                   key={status} 
                   className={`p-4 rounded-2xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer hover:shadow-md ${orderFilterStatus === status ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-100 text-slate-800'}`}
@@ -669,6 +674,14 @@ const App: React.FC = () => {
                 >
                   <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${orderFilterStatus === status ? 'text-indigo-100' : 'text-slate-400'}`}>{status}</span>
                   <span className="text-2xl font-black tracking-tighter">{count}</span>
+                  {status === 'Ready for Payment' && (
+                    <div className={`mt-1.5 pt-1.5 border-t w-full flex flex-col gap-0.5 ${orderFilterStatus === status ? 'border-indigo-500/50 text-indigo-100' : 'border-slate-50 text-slate-400'}`}>
+                      <div className="flex justify-between items-center text-[7px] font-black uppercase tracking-tighter">
+                        <span>P: ₹{totalProfit.toLocaleString()}</span>
+                        <span>S: ₹{totalSettled.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
