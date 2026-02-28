@@ -180,7 +180,7 @@ const App: React.FC = () => {
 
   const stats = useMemo(() => {
     const settled = orders.filter(o => o.status === 'Settled');
-    const rev = settled.reduce((s, o) => s + (Number(o.settledAmount) || 0), 0);
+    const baseRev = settled.reduce((s, o) => s + (Number(o.settledAmount) || 0), 0);
     const baseProf = settled.reduce((s, o) => s + (Number(o.profit) || 0), 0);
     
     // Calculate Customer Loss (sum of lossAmount where status is Returned and bankSettled is true)
@@ -188,6 +188,7 @@ const App: React.FC = () => {
       .filter(o => o.status === 'Returned' && o.bankSettled)
       .reduce((s, o) => s + (Number(o.lossAmount) || 0), 0);
     
+    const rev = baseRev - customerLoss;
     const prof = baseProf - customerLoss;
     
     return { rev, prof, customerLoss, count: orders.length };
@@ -202,9 +203,11 @@ const App: React.FC = () => {
         map[m].revenue += Number(o.settledAmount); 
         map[m].profit += Number(o.profit); 
       }
-      // Subtract customer loss from monthly profit
+      // Subtract customer loss from monthly profit and revenue
       if (o.status === 'Returned' && o.bankSettled) {
-        map[m].profit -= (Number(o.lossAmount) || 0);
+        const loss = Number(o.lossAmount) || 0;
+        map[m].profit -= loss;
+        map[m].revenue -= loss;
       }
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
