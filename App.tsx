@@ -669,18 +669,36 @@ const App: React.FC = () => {
               {orderStatusSummary.map(({ status, count, totalProfit, totalSettled }) => (
                 <div 
                   key={status} 
-                  className={`p-4 rounded-2xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer hover:shadow-md ${orderFilterStatus === status ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-100 text-slate-800'}`}
+                  className={`group relative p-4 rounded-2xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer hover:shadow-md ${orderFilterStatus === status ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-100 text-slate-800'}`}
                   onClick={() => setOrderFilterStatus(orderFilterStatus === status ? 'all' : status)}
                 >
                   <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${orderFilterStatus === status ? 'text-indigo-100' : 'text-slate-400'}`}>{status}</span>
-                  <span className="text-2xl font-black tracking-tighter">{count}</span>
-                  {status === 'Ready for Payment' && (
-                    <div className={`mt-1.5 pt-1.5 border-t w-full flex flex-col gap-0.5 ${orderFilterStatus === status ? 'border-indigo-500/50 text-indigo-100' : 'border-slate-50 text-slate-400'}`}>
-                      <div className="flex justify-between items-center text-[7px] font-black uppercase tracking-tighter">
-                        <span>P: ₹{totalProfit.toLocaleString()}</span>
-                        <span>S: ₹{totalSettled.toLocaleString()}</span>
+                  <span className="text-2xl font-black tracking-tighter transition-transform group-hover:scale-90">{count}</span>
+                  {status === 'Ready For Payment' && (
+                    <>
+                      {/* Small footer visible by default */}
+                      <div className={`mt-1.5 pt-1.5 border-t w-full flex flex-col gap-0.5 transition-opacity duration-200 group-hover:opacity-0 ${orderFilterStatus === status ? 'border-indigo-500/50 text-indigo-100' : 'border-slate-50 text-slate-400'}`}>
+                        <div className="flex justify-between items-center text-[7px] font-black uppercase tracking-tighter">
+                          <span>P: ₹{totalProfit.toLocaleString()}</span>
+                          <span>S: ₹{totalSettled.toLocaleString()}</span>
+                        </div>
                       </div>
-                    </div>
+
+                      {/* Large hover details */}
+                      <div className={`absolute inset-0 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-10 ${orderFilterStatus === status ? 'bg-indigo-700' : 'bg-white shadow-xl border border-indigo-100'}`}>
+                        <span className="text-[8px] font-black uppercase tracking-widest mb-2 opacity-50">Ready For Payment</span>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Profit</span>
+                            <span className={`text-sm font-black ${orderFilterStatus === status ? 'text-white' : 'text-emerald-600'}`}>₹{totalProfit.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Settled</span>
+                            <span className={`text-sm font-black ${orderFilterStatus === status ? 'text-white' : 'text-indigo-600'}`}>₹{totalSettled.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
