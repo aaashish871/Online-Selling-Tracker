@@ -2,13 +2,25 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { Order, InventoryItem, UserProfile } from "../types.ts";
 
-const supabaseUrl = 'https://yvugbgjrakdcgirxpcvi.supabase.co';
-const supabaseKey = 'sb_publishable_f3m2s_7xpL28Tm8vQsjU1A_R7HVsVJP';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://yvugbgjrakdcgirxpcvi.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2dWdiZ2pyYWtkY2dpcnhwY3ZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3Mzc5MjAsImV4cCI6MjA4NjMxMzkyMH0.s-IFW7LEuGHT8tnVvJ2WczckZN9Y9Uup1pGG-YaH1h0';
+
+if (supabaseKey.startsWith('sb_') || supabaseKey.startsWith('pk_')) {
+  console.warn("⚠️ DATABASE CONFIGURATION WARNING: The provided Supabase Anon Key appears to be a Stripe key. Supabase keys should start with 'eyJ'.");
+}
 
 let supabase: SupabaseClient | null = null;
 if (supabaseUrl && supabaseKey) {
   try {
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+      global: {
+        headers: { 'x-my-custom-header': 'online-selling-tracker' },
+      },
+    });
   } catch (e) {
     console.error("Failed to initialize Supabase client:", e);
   }
