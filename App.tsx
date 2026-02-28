@@ -42,6 +42,11 @@ const App: React.FC = () => {
   const [orderFilterMonth, setOrderFilterMonth] = useState('all');
   const [orderFilterStatus, setOrderFilterStatus] = useState('all');
 
+  // Filtering States for Returned Tab
+  const [returnFilterType, setReturnFilterType] = useState('all');
+  const [returnFilterReceived, setReturnFilterReceived] = useState('all');
+  const [returnFilterClaim, setReturnFilterClaim] = useState('all');
+
   // Reports State
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -216,6 +221,17 @@ const App: React.FC = () => {
       return monthMatch && statusMatch;
     });
   }, [orders, orderFilterMonth, orderFilterStatus]);
+
+  // Filtered Returned Orders Logic
+  const filteredReturnedOrders = useMemo(() => {
+    return orders.filter(o => {
+      if (o.status !== 'Returned') return false;
+      const typeMatch = returnFilterType === 'all' || o.returnType === returnFilterType;
+      const receivedMatch = returnFilterReceived === 'all' || (o.receivedStatus || 'Pending') === returnFilterReceived;
+      const claimMatch = returnFilterClaim === 'all' || (o.claimStatus || 'None') === returnFilterClaim;
+      return typeMatch && receivedMatch && claimMatch;
+    });
+  }, [orders, returnFilterType, returnFilterReceived, returnFilterClaim]);
 
   if (!user && !authLoading) {
     return (
@@ -440,11 +456,61 @@ const App: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-              <div className="p-8 border-b border-slate-50">
-                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Returns Management</h2>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {orders.filter(o => o.status === 'Returned').length} Returned Items
-                </span>
+              <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Returns Management</h2>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {filteredReturnedOrders.length} Returned Items Showing
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="flex-1 md:flex-none">
+                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Return Type</label>
+                    <select 
+                      className="w-full md:w-32 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
+                      value={returnFilterType}
+                      onChange={e => setReturnFilterType(e.target.value)}
+                    >
+                      <option value="all">All Types</option>
+                      <option value="Courier">Courier</option>
+                      <option value="Customer">Customer</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 md:flex-none">
+                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Received</label>
+                    <select 
+                      className="w-full md:w-32 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
+                      value={returnFilterReceived}
+                      onChange={e => setReturnFilterReceived(e.target.value)}
+                    >
+                      <option value="all">All Status</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Received">Received</option>
+                      <option value="Not Received">Not Received</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 md:flex-none">
+                    <label className="block text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Claim</label>
+                    <select 
+                      className="w-full md:w-32 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100"
+                      value={returnFilterClaim}
+                      onChange={e => setReturnFilterClaim(e.target.value)}
+                    >
+                      <option value="all">All Claims</option>
+                      <option value="None">None</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+                  <button 
+                    onClick={() => { setReturnFilterType('all'); setReturnFilterReceived('all'); setReturnFilterClaim('all'); }}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Clear Filters"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -460,7 +526,7 @@ const App: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {orders.filter(o => o.status === 'Returned').map(o => (
+                    {filteredReturnedOrders.map(o => (
                       <tr key={o.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-8 py-4 font-black text-indigo-600 text-xs">{o.id}</td>
                         <td className="px-4 py-4 font-bold text-slate-800 text-xs">{o.productName}</td>
@@ -546,9 +612,9 @@ const App: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
-                {orders.filter(o => o.status === 'Returned').length === 0 && (
+                {filteredReturnedOrders.length === 0 && (
                   <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest">
-                    No returned items found
+                    No returned items found matching filters
                   </div>
                 )}
               </div>
