@@ -181,8 +181,16 @@ const App: React.FC = () => {
   const stats = useMemo(() => {
     const settled = orders.filter(o => o.status === 'Settled');
     const rev = settled.reduce((s, o) => s + (Number(o.settledAmount) || 0), 0);
-    const prof = settled.reduce((s, o) => s + (Number(o.profit) || 0), 0);
-    return { rev, prof, count: orders.length };
+    const baseProf = settled.reduce((s, o) => s + (Number(o.profit) || 0), 0);
+    
+    // Calculate Customer Loss (sum of lossAmount where status is Returned and bankSettled is true)
+    const customerLoss = orders
+      .filter(o => o.status === 'Returned' && o.bankSettled)
+      .reduce((s, o) => s + (Number(o.lossAmount) || 0), 0);
+    
+    const prof = baseProf - customerLoss;
+    
+    return { rev, prof, customerLoss, count: orders.length };
   }, [orders]);
 
   const monthlyData = useMemo(() => {
@@ -190,7 +198,14 @@ const App: React.FC = () => {
     orders.forEach(o => {
       const m = o.date.substring(0, 7);
       if (!map[m]) map[m] = { month: m, revenue: 0, profit: 0 };
-      if (o.status === 'Settled') { map[m].revenue += Number(o.settledAmount); map[m].profit += Number(o.profit); }
+      if (o.status === 'Settled') { 
+        map[m].revenue += Number(o.settledAmount); 
+        map[m].profit += Number(o.profit); 
+      }
+      // Subtract customer loss from monthly profit
+      if (o.status === 'Returned' && o.bankSettled) {
+        map[m].profit -= (Number(o.lossAmount) || 0);
+      }
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
   }, [orders]);
@@ -390,6 +405,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatsCard label="Net Settled" value={`₹${stats.rev.toLocaleString()}`} color="bg-indigo-600" icon="₹" />
               <StatsCard label="Net Profit" value={`₹${stats.prof.toLocaleString()}`} color="bg-emerald-500" icon="📈" />
+              <StatsCard label="Customer Loss" value={`₹${stats.customerLoss.toLocaleString()}`} color="bg-rose-500" icon="📉" />
               <StatsCard label="Total Orders" value={stats.count} color="bg-slate-800" icon="📦" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -501,6 +517,7 @@ const App: React.FC = () => {
                       <option value="Pending">Pending</option>
                       <option value="Approved">Approved</option>
                       <option value="Rejected">Rejected</option>
+                      <option value="Not Required">Not Required</option>
                     </select>
                   </div>
                   <button 
@@ -521,6 +538,7 @@ const App: React.FC = () => {
                       <th className="px-4 py-4">Return Type</th>
                       <th className="px-4 py-4">Received Status</th>
                       <th className="px-4 py-4">Loss Amount</th>
+                      <th className="px-4 py-4 text-center">Bank Settled</th>
                       <th className="px-4 py-4">Claim Status</th>
                       <th className="px-4 py-4">Actions</th>
                     </tr>
@@ -579,12 +597,25 @@ const App: React.FC = () => {
                             />
                           </div>
                         </td>
+                        <td className="px-4 py-4 text-center">
+                          <input 
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            checked={o.bankSettled || false}
+                            onChange={async (e) => {
+                              const val = e.target.checked;
+                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, bankSettled: val } : item));
+                              await dbService.updateOrder({ ...o, bankSettled: val });
+                            }}
+                          />
+                        </td>
                         <td className="px-4 py-4">
                           <select 
                             className={`px-3 py-1.5 text-[10px] font-black rounded-lg border-none focus:ring-2 focus:ring-indigo-200 ${
                               o.claimStatus === 'Approved' ? 'bg-emerald-50 text-emerald-600' :
                               o.claimStatus === 'Rejected' ? 'bg-rose-50 text-rose-600' :
                               o.claimStatus === 'Pending' ? 'bg-amber-50 text-amber-600' :
+                              o.claimStatus === 'Not Required' ? 'bg-slate-100 text-slate-500' :
                               'bg-slate-50 text-slate-600'
                             }`}
                             value={o.claimStatus || 'None'}
@@ -598,6 +629,7 @@ const App: React.FC = () => {
                             <option value="Pending">Pending</option>
                             <option value="Approved">Approved</option>
                             <option value="Rejected">Rejected</option>
+                            <option value="Not Required">Not Required</option>
                           </select>
                         </td>
                         <td className="px-4 py-4">

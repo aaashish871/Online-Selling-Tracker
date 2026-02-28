@@ -12,8 +12,9 @@ export interface Order {
   status: string;
   returnType?: 'Courier' | 'Customer' | null;
   lossAmount?: number;
-  claimStatus?: 'Pending' | 'Approved' | 'Rejected' | 'None';
+  claimStatus?: 'Pending' | 'Approved' | 'Rejected' | 'None' | 'Not Required';
   receivedStatus?: 'Pending' | 'Received' | 'Not Received';
+  bankSettled?: boolean;
 }
 
 export interface InventoryItem {
