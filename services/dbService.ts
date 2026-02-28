@@ -19,14 +19,38 @@ export const dbService = {
     return !!supabase;
   },
 
+  async checkConnection(): Promise<boolean> {
+    if (!supabase) return false;
+    try {
+      const { error } = await supabase.from('osot_profiles').select('count', { count: 'exact', head: true }).limit(1);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  async retryFetch<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (retries > 0 && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        await new Promise(r => setTimeout(r, 1000));
+        return this.retryFetch(fn, retries - 1);
+      }
+      throw err;
+    }
+  },
+
   // --- Auth & Profile Operations ---
   async login(email: string, password: string): Promise<{ user: User | null; error: any }> {
     if (!supabase) throw new Error("Supabase is not configured.");
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (data.user) {
-      await this.syncProfile(data.user);
-    }
-    return { user: data.user, error };
+    return this.retryFetch(async () => {
+      const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+      if (data.user) {
+        await this.syncProfile(data.user);
+      }
+      return { user: data.user, error };
+    });
   },
 
   async register(email: string, password: string, role: string = 'Staff'): Promise<{ user: User | null; error: any }> {
@@ -105,8 +129,11 @@ export const dbService = {
     if (!supabase) return [];
     const user = await this.getCurrentUser();
     if (!user) return [];
-    const { data } = await supabase.from('osot_inventory').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-    return data as InventoryItem[];
+    return this.retryFetch(async () => {
+      const { data, error } = await supabase!.from('osot_inventory').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+      if (error) throw error;
+      return data as InventoryItem[];
+    });
   },
 
   async saveInventoryItem(item: InventoryItem): Promise<void> {
@@ -127,9 +154,11 @@ export const dbService = {
     if (!supabase) return [];
     const user = await this.getCurrentUser();
     if (!user) return [];
-    const { data, error } = await supabase.from('osot_orders').select('*').eq('user_id', user.id).order('date', { ascending: false });
-    if (error) throw error;
-    return data as Order[];
+    return this.retryFetch(async () => {
+      const { data, error } = await supabase!.from('osot_orders').select('*').eq('user_id', user.id).order('date', { ascending: false });
+      if (error) throw error;
+      return data as Order[];
+    });
   },
 
   async saveOrder(order: Order): Promise<void> {

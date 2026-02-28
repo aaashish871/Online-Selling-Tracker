@@ -24,6 +24,7 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
   const [view, setView] = useState<ViewMode>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -64,6 +65,10 @@ const App: React.FC = () => {
       try {
         const currentUser = await dbService.getCurrentUser();
         setUser(currentUser);
+        const isOnline = await dbService.checkConnection();
+        setDbStatus(isOnline ? 'online' : 'offline');
+      } catch {
+        setDbStatus('offline');
       } finally {
         setAuthLoading(false);
       }
@@ -80,7 +85,11 @@ const App: React.FC = () => {
       : await dbService.login(email, password);
     
     if (error) { 
-      setAuthError(error.message); 
+      let msg = error.message;
+      if (msg === 'Failed to fetch') {
+        msg = 'Connection Error: Please check your internet or ensure the database project is active.';
+      }
+      setAuthError(msg); 
       setAuthLoading(false); 
     } else { 
       setUser(loggedInUser); 
@@ -215,7 +224,13 @@ const App: React.FC = () => {
           <div className="text-center mb-10">
             <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white font-black text-4xl shadow-xl mx-auto mb-6">O</div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Order Analyzer</h1>
-            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-1">
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : dbStatus === 'offline' ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-slate-300 animate-pulse'}`}></div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                System Status: {dbStatus === 'online' ? 'Connected' : dbStatus === 'offline' ? 'Database Paused/Offline' : 'Checking...'}
+              </p>
+            </div>
+            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-3">
               {isRegisterMode ? 'Team Member Registration' : 'Secure Access Gateway'}
             </p>
           </div>
