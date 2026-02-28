@@ -89,12 +89,6 @@ const App: React.FC = () => {
       if (msg === 'Failed to fetch') {
         msg = 'Connection Error: Please check your internet or ensure the database project is active.';
       }
-      // Check for suspicious key format
-      const activeKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2dWdiZ2pyYWtkY2dpcnhwY3ZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3Mzc5MjAsImV4cCI6MjA4NjMxMzkyMH0.s-IFW7LEuGHT8tnVvJ2WczckZN9Y9Uup1pGG-YaH1h0';
-      const isStripeKey = activeKey.startsWith('sb_') || activeKey.startsWith('pk_');
-      if (isStripeKey) {
-        msg = 'Configuration Error: The Supabase Anon Key appears to be a Stripe key. Please use the correct Anon Key (starting with eyJ) from Supabase settings.';
-      }
       setAuthError(msg); 
       setAuthLoading(false); 
     } else { 
@@ -240,6 +234,7 @@ const App: React.FC = () => {
               {isRegisterMode ? 'Team Member Registration' : 'Secure Access Gateway'}
             </p>
           </div>
+
           <form onSubmit={handleAuth} className="space-y-6">
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email Address</label>
