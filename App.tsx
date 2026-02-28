@@ -638,10 +638,39 @@ const App: React.FC = () => {
                             value={o.status}
                             onChange={async (e) => {
                               const newStatus = e.target.value;
+                              let actualSettledAmount = o.settledAmount;
+                              let newProfit = o.profit;
+
+                              if (newStatus === 'Settled') {
+                                const promptVal = window.prompt(`Enter actual settled amount for order ${o.id}:`, o.settledAmount.toString());
+                                if (promptVal !== null) {
+                                  const amount = parseFloat(promptVal);
+                                  if (!isNaN(amount)) {
+                                    actualSettledAmount = amount;
+                                    // Recalculate profit based on original unit cost
+                                    // Original profit = original settled - unit cost
+                                    // unit cost = original settled - original profit
+                                    const unitCost = o.settledAmount - o.profit;
+                                    newProfit = actualSettledAmount - unitCost;
+                                  }
+                                }
+                              }
+
                               // Targeted state update instead of loadData() to prevent perceived "page refresh"
-                              setOrders(prev => prev.map(item => item.id === o.id ? { ...item, status: newStatus } : item));
+                              setOrders(prev => prev.map(item => item.id === o.id ? { 
+                                ...item, 
+                                status: newStatus,
+                                settledAmount: actualSettledAmount,
+                                profit: newProfit
+                              } : item));
+                              
                               try {
-                                const updated = { ...o, status: newStatus };
+                                const updated = { 
+                                  ...o, 
+                                  status: newStatus,
+                                  settledAmount: actualSettledAmount,
+                                  profit: newProfit
+                                };
                                 await dbService.updateOrder(updated);
                               } catch (err) {
                                 console.error("Failed to update status:", err);
