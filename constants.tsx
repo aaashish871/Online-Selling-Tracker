@@ -10,6 +10,7 @@ export const INITIAL_STATUSES = [
   'Ready for Shipment',
   'Shipped',
   'Delivered',
+  'Ready For Payment',
   'Settled',
   'Returned',
   'Cancelled'
