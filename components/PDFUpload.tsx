@@ -95,6 +95,7 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
       console.error(err);
       setError(err.message || 'An error occurred during processing.');
       setStatus('error');
+      setIsProcessing(false);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -108,12 +109,19 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
           Bulk PDF Import
         </h3>
         {status !== 'idle' && (
-          <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-1 rounded-md ${
-            status === 'success' ? 'bg-emerald-50 text-emerald-600' : 
-            status === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'
-          }`}>
-            {status}
-          </span>
+          <div className="flex items-center gap-2">
+            {status === 'error' && error && (
+              <span className="text-[9px] font-bold text-rose-500 truncate max-w-[150px] md:max-w-[300px]">
+                {error}
+              </span>
+            )}
+            <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-1 rounded-md ${
+              status === 'success' ? 'bg-emerald-50 text-emerald-600' : 
+              status === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'
+            }`}>
+              {status}
+            </span>
+          </div>
         )}
       </div>
 
