@@ -233,6 +233,7 @@ const App: React.FC = () => {
 
       // Instead of window.confirm, we set the result to show the confirmation UI
       setCleanupResult({ found: ordersToDelete, deleted: 0 });
+      setIsCleaningUp(false); // Reset loading state so user can click "Confirm & Delete"
     } catch (error: any) {
       console.error("Cleanup Scan Error:", error);
       alert("Scan failed: " + error.message);
