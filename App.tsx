@@ -5,6 +5,8 @@ import { INITIAL_STATUSES, CATEGORIES } from './constants.tsx';
 import StatsCard from './components/StatsCard.tsx';
 import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
+import BulkUploadModal from './components/BulkUploadModal.tsx';
+import PDFUpload from './components/PDFUpload.tsx';
 import { dbService } from './services/dbService.ts';
 import { getAIAnalysis } from './services/geminiService.ts';
 import { User } from '@supabase/supabase-js';
@@ -35,6 +37,7 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<string[]>(CATEGORIES);
 
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -150,6 +153,17 @@ const App: React.FC = () => {
     }
   };
 
+  const handleOrdersExtracted = async (newOrders: Order[]) => {
+    setOrders(prev => [...newOrders, ...prev]);
+    try {
+      await dbService.saveOrders(newOrders);
+      await loadData(true);
+    } catch (err) {
+      setOrders(prev => prev.filter(o => !newOrders.find(no => no.id === o.id)));
+      throw err;
+    }
+  };
+
   const runAIAnalysis = async () => {
     if (orders.length === 0) {
       alert("Record some orders first to get AI insights!");
@@ -178,6 +192,40 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBulkOrdersAdded = async (extractedOrders: Partial<Order>[]) => {
+    const newOrders: Order[] = [];
+    
+    for (const ext of extractedOrders) {
+      // Try to find matching inventory item by SKU or Name
+      const matchingItem = inventory.find(inv => 
+        (ext as any).sku && inv.sku === (ext as any).sku || 
+        inv.name.toLowerCase() === ext.productName?.toLowerCase()
+      );
+
+      const newOrder: Order = {
+        id: ext.id || `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        date: ext.date || new Date().toISOString().split('T')[0],
+        productId: matchingItem?.id || 'manual-entry',
+        productName: ext.productName || 'Unknown Product',
+        category: matchingItem?.category || 'Other',
+        listingPrice: ext.listingPrice || 0,
+        settledAmount: 0,
+        profit: 0,
+        status: 'Order Received',
+        user_id: user?.id
+      };
+      
+      newOrders.push(newOrder);
+    }
+
+    // Save all orders
+    for (const order of newOrders) {
+      await dbService.saveOrder(order);
+    }
+    
+    await loadData(true);
+  };
+
   const stats = useMemo(() => {
     const settled = orders.filter(o => o.status === 'Settled');
     const baseRev = settled.reduce((s, o) => s + (Number(o.settledAmount) || 0), 0);
@@ -200,17 +248,24 @@ const App: React.FC = () => {
       const m = o.date.substring(0, 7);
       if (!map[m]) map[m] = { month: m, revenue: 0, profit: 0 };
       if (o.status === 'Settled') { 
-        map[m].revenue += Number(o.settledAmount); 
-        map[m].profit += Number(o.profit); 
+        map[m].revenue = (map[m].revenue || 0) + Number(o.settledAmount); 
+        map[m].profit = (map[m].profit || 0) + Number(o.profit); 
       }
       // Subtract customer loss from monthly profit and revenue
       if (o.status === 'Returned' && o.bankSettled) {
         const loss = Number(o.lossAmount) || 0;
-        map[m].profit -= loss;
-        map[m].revenue -= loss;
+        map[m].profit = (map[m].profit || 0) - loss;
+        map[m].revenue = (map[m].revenue || 0) - loss;
       }
     });
-    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+
+    return Object.values(map)
+      .map(item => ({
+        ...item,
+        revenue: Number(item.revenue.toFixed(2)),
+        profit: Number(item.profit.toFixed(2))
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
   }, [orders]);
 
   // Status Counts for Cards - Sorted by Highest
@@ -268,6 +323,19 @@ const App: React.FC = () => {
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                 System Status: {dbStatus === 'online' ? 'Connected' : dbStatus === 'offline' ? 'Database Paused/Offline' : 'Checking...'}
               </p>
+              {dbStatus === 'offline' && (
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    setDbStatus('checking');
+                    const isOnline = await dbService.checkConnection();
+                    setDbStatus(isOnline ? 'online' : 'offline');
+                  }}
+                  className="text-[8px] font-black text-indigo-600 uppercase tracking-tighter hover:underline"
+                >
+                  [Retry Connection]
+                </button>
+              )}
             </div>
             <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-3">
               {isRegisterMode ? 'Team Member Registration' : 'Secure Access Gateway'}
@@ -416,8 +484,8 @@ const App: React.FC = () => {
               <StatsCard label="Customer Loss" value={`₹${stats.customerLoss.toLocaleString()}`} color="bg-rose-500" icon="📉" />
               <StatsCard label="Total Orders" value={stats.count} color="bg-slate-800" icon="📦" />
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative isolate">
+              <div className="lg:col-span-4 relative z-10">
                 <OrderForm 
                   onAdd={async o => { 
                     // Optimistic update
@@ -434,8 +502,15 @@ const App: React.FC = () => {
                   inventory={inventory} 
                   statuses={statuses} 
                 />
+                <div className="mt-6">
+                  <PDFUpload 
+                    onOrdersExtracted={handleOrdersExtracted}
+                    inventory={inventory}
+                    statuses={statuses}
+                  />
+                </div>
               </div>
-              <div className="lg:col-span-8 bg-white p-6 rounded-[2rem] border border-slate-100 h-[350px]">
+              <div className="lg:col-span-8 bg-white p-6 rounded-[2rem] border border-slate-100 h-[350px] relative overflow-hidden">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Sales Trend</h3>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={monthlyData}>
@@ -708,7 +783,16 @@ const App: React.FC = () => {
               <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6">
                 <div>
                   <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Order Management</h2>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filteredOrders.length} Records Showing</span>
+                  <div className="flex items-center gap-4 mt-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filteredOrders.length} Records Showing</span>
+                    <button 
+                      onClick={() => setIsBulkUploadOpen(true)}
+                      className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                      Bulk Upload (PDF)
+                    </button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                   <div className="flex-1 md:flex-none">
@@ -953,6 +1037,11 @@ const App: React.FC = () => {
           initialData={editingItem} 
         />
       )}
+      <BulkUploadModal 
+        isOpen={isBulkUploadOpen} 
+        onClose={() => setIsBulkUploadOpen(false)} 
+        onOrdersAdded={handleBulkOrdersAdded}
+      />
     </div>
   );
 };

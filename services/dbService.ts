@@ -195,6 +195,17 @@ export const dbService = {
     });
   },
 
+  async saveOrders(orders: Order[]): Promise<void> {
+    if (!supabase) return;
+    const user = await this.getCurrentUser();
+    if (!user) return;
+    const ordersWithUser = orders.map(o => ({ ...o, user_id: user.id }));
+    return this.retryFetch(async () => {
+      const { error } = await supabase!.from('osot_orders').insert(ordersWithUser);
+      if (error) throw error;
+    });
+  },
+
   async updateOrder(order: Order): Promise<void> {
     if (!supabase) return;
     return this.retryFetch(async () => {
