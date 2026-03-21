@@ -236,12 +236,29 @@ export const dbService = {
     if (!user) return;
 
     return this.retryFetch(async () => {
-      // For each update, we update the status of the order matching the ID and user_id
       for (const update of updates) {
         const { error } = await supabase!
           .from('osot_orders')
           .update({ status: update.status })
           .eq('id', update.id)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      }
+    });
+  },
+
+  async updateOrderPayments(updates: { id: string, status?: string, settledAmount?: number }[]): Promise<void> {
+    if (!supabase || updates.length === 0) return;
+    const user = await this.getCurrentUser();
+    if (!user) return;
+
+    return this.retryFetch(async () => {
+      for (const update of updates) {
+        const { id, ...fields } = update;
+        const { error } = await supabase!
+          .from('osot_orders')
+          .update(fields)
+          .eq('id', id)
           .eq('user_id', user.id);
         if (error) throw error;
       }

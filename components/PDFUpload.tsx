@@ -62,6 +62,10 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
       setProgress(80);
       
       const newOrders: Order[] = extractedData.map((data: any) => {
+        // Normalize Order ID to end with _1
+        let rawId = data.id || `AUTO-${Math.random().toString(36).substr(2, 9)}`;
+        const normalizedId = rawId.endsWith('_1') ? rawId : `${rawId}_1`;
+
         // Try to find matching product in inventory by SKU or Name
         const matchedProduct = inventory.find(i => 
           (data.sku && i.sku.toLowerCase() === data.sku.toLowerCase()) ||
@@ -74,7 +78,7 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
         const profit = settledAmount - cost;
 
         return {
-          id: data.id || `AUTO-${Math.random().toString(36).substr(2, 9)}`,
+          id: normalizedId,
           date: data.date || new Date().toISOString().split('T')[0],
           productId: matchedProduct?.id || 'manual-entry',
           productName: data.productName || 'Unknown Product',

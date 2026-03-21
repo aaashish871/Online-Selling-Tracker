@@ -7,10 +7,11 @@ import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
 import BulkUploadModal from './components/BulkUploadModal.tsx';
 import StatusSyncModal from './components/StatusSyncModal.tsx';
+import PaymentSyncModal from './components/PaymentSyncModal.tsx';
 import PDFUpload from './components/PDFUpload.tsx';
 import { dbService } from './services/dbService.ts';
 import { getAIAnalysis } from './services/geminiService.ts';
-import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, IndianRupee, FileSpreadsheet, Upload } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
@@ -41,6 +42,7 @@ const App: React.FC = () => {
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [isStatusSyncOpen, setIsStatusSyncOpen] = useState(false);
+  const [isPaymentSyncOpen, setIsPaymentSyncOpen] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{ found: string[], deleted: number } | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -917,6 +919,14 @@ const App: React.FC = () => {
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         Sync Status (Excel)
                       </button>
+                      <div className="w-1 h-1 bg-slate-200 rounded-full"></div>
+                      <button 
+                        onClick={() => setIsPaymentSyncOpen(true)}
+                        className="text-[10px] font-black text-rose-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                      >
+                        <IndianRupee className="w-3 h-3" />
+                        Payment to Date (Meesho)
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1204,6 +1214,37 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 mb-6 uppercase tracking-tight">Bulk Data Sync</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
+                    <h4 className="text-xs font-black text-emerald-900 uppercase tracking-tight mb-2">Payment to Date</h4>
+                    <p className="text-[10px] font-bold text-emerald-600 mb-4 leading-relaxed">
+                      Sync actual settled amounts from Meesho payment reports.
+                    </p>
+                    <button 
+                      onClick={() => setIsPaymentSyncOpen(true)}
+                      className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                    >
+                      Open Payment Sync
+                    </button>
+                  </div>
+
+                  <div className="p-6 bg-indigo-50 rounded-3xl border border-indigo-100">
+                    <h4 className="text-xs font-black text-indigo-900 uppercase tracking-tight mb-2">Status Sync</h4>
+                    <p className="text-[10px] font-bold text-indigo-600 mb-4 leading-relaxed">
+                      Update order statuses in bulk using Excel sheets.
+                    </p>
+                    <button 
+                      onClick={() => setIsStatusSyncOpen(true)}
+                      className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                    >
+                      Open Status Sync
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1271,6 +1312,12 @@ const App: React.FC = () => {
       {isStatusSyncOpen && (
         <StatusSyncModal 
           onClose={() => setIsStatusSyncOpen(false)}
+          onSuccess={() => loadData(true)}
+        />
+      )}
+      {isPaymentSyncOpen && (
+        <PaymentSyncModal 
+          onClose={() => setIsPaymentSyncOpen(false)}
           onSuccess={() => loadData(true)}
         />
       )}
