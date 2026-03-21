@@ -502,24 +502,13 @@ const App: React.FC = () => {
                   inventory={inventory} 
                   statuses={statuses} 
                 />
-                <div className="mt-6">
-                  <PDFUpload 
-                    onOrdersExtracted={handleOrdersExtracted}
-                    inventory={inventory}
-                    statuses={statuses}
-                  />
-                </div>
               </div>
-              <div className="lg:col-span-8 bg-white p-6 rounded-[2rem] border border-slate-100 h-[350px] relative overflow-hidden">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Sales Trend</h3>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 9, fontWeight: 900}} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="profit" stroke="#10b981" fillOpacity={0.1} fill="#10b981" />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="lg:col-span-8">
+                <PDFUpload 
+                  onOrdersExtracted={handleOrdersExtracted}
+                  inventory={inventory}
+                  statuses={statuses}
+                />
               </div>
             </div>
           </div>
