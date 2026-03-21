@@ -35,21 +35,43 @@ export default function StatusSyncModal({ onClose, onSuccess }: StatusSyncModalP
 
       // Identify columns (case insensitive)
       const firstRow = jsonData[0];
-      const idKey = Object.keys(firstRow).find(k => k.toLowerCase().includes('order id') || k.toLowerCase() === 'id');
-      const statusKey = Object.keys(firstRow).find(k => k.toLowerCase().includes('status'));
+      const idKey = Object.keys(firstRow).find(k => 
+        k.toLowerCase().includes('sub order no') || 
+        k.toLowerCase().includes('order id') || 
+        k.toLowerCase() === 'id'
+      );
+      const statusKey = Object.keys(firstRow).find(k => 
+        k.toLowerCase().includes('reason for credit entry') || 
+        k.toLowerCase().includes('status')
+      );
 
       if (!idKey || !statusKey) {
-        throw new Error("Could not find 'Order ID' and 'Status' columns in the Excel sheet.");
+        throw new Error("Could not find 'Sub Order No' (or Order ID) and 'Reason for Credit Entry' (or Status) columns in the Excel sheet.");
       }
+
+      const statusMap: Record<string, string> = {
+        'CANCELLED': 'Cancelled',
+        'DELIVERED': 'Delivered',
+        'RTO_COMPLETE': 'Returned',
+        'RTO_IN_TRANSIT': 'Returned',
+        'RETURN_PENDING': 'Returned',
+        'SHIPPED': 'Shipped'
+      };
 
       const updates = jsonData
         .map(row => {
           const rawId = String(row[idKey]).trim();
           // Ensure ID ends with _1 for matching
           const normalizedId = rawId.endsWith('_1') ? rawId : `${rawId}_1`;
+          
+          let rawStatus = String(row[statusKey]).trim();
+          // Map status if found in map, otherwise use raw (but capitalized correctly)
+          const upperStatus = rawStatus.toUpperCase();
+          const mappedStatus = statusMap[upperStatus] || rawStatus;
+
           return {
             id: normalizedId,
-            status: String(row[statusKey]).trim()
+            status: mappedStatus
           };
         })
         .filter(u => u.id && u.status);
@@ -102,7 +124,7 @@ export default function StatusSyncModal({ onClose, onSuccess }: StatusSyncModalP
                 <FileSpreadsheet className="w-12 h-12 text-indigo-400 mx-auto mb-4" />
                 <p className="text-sm font-bold text-indigo-900 mb-2">Upload Status Excel</p>
                 <p className="text-[10px] text-indigo-500 uppercase font-black tracking-widest mb-6">
-                  File must contain 'Order ID' and 'Status' columns
+                  File must contain 'Sub Order No' and 'Reason for Credit Entry'
                 </p>
                 
                 <input 
@@ -143,8 +165,8 @@ export default function StatusSyncModal({ onClose, onSuccess }: StatusSyncModalP
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Instructions</h4>
                 <ul className="text-[10px] font-bold text-slate-600 space-y-1.5 list-disc pl-4">
                   <li>Ensure your Excel has clear headers.</li>
-                  <li>Column names should include "Order ID" and "Status".</li>
-                  <li>Statuses must match your configured workflow.</li>
+                  <li>Column names should include "Sub Order No" and "Reason for Credit Entry".</li>
+                  <li>Common statuses like "CANCELLED", "DELIVERED", and "RTO_COMPLETE" are automatically mapped.</li>
                 </ul>
               </div>
             </div>
