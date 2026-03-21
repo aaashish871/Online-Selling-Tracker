@@ -20,6 +20,7 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
   const [progress, setProgress] = useState(0);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [duplicateOrders, setDuplicateOrders] = useState<{ new: Order, existing: Order }[]>([]);
+  const [summary, setSummary] = useState<{ count: number, amount: number, profit: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,12 +112,19 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
       setProgress(80);
       await onOrdersExtracted(newOrders);
       
+      setSummary({
+        count: newOrders.length,
+        amount: newOrders.reduce((sum, o) => sum + o.listingPrice, 0),
+        profit: newOrders.reduce((sum, o) => sum + o.profit, 0)
+      });
+
       setStatus('success');
       setProgress(100);
       setTimeout(() => {
         setStatus('idle');
         setIsProcessing(false);
-      }, 3000);
+        setSummary(null);
+      }, 5000);
 
     } catch (err: any) {
       console.error(err);
@@ -142,6 +150,12 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
         await onOrdersExtracted(ordersToUpload);
       }
       
+      setSummary({
+        count: ordersToUpload.length,
+        amount: ordersToUpload.reduce((sum, o) => sum + o.listingPrice, 0),
+        profit: ordersToUpload.reduce((sum, o) => sum + o.profit, 0)
+      });
+
       setStatus('success');
       setProgress(100);
       setTimeout(() => {
@@ -149,7 +163,8 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
         setIsProcessing(false);
         setPendingOrders([]);
         setDuplicateOrders([]);
-      }, 3000);
+        setSummary(null);
+      }, 5000);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred during processing.');
@@ -226,10 +241,28 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
               key="success"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center gap-2 text-emerald-600"
+              className="flex flex-col items-center gap-3 text-emerald-600 w-full"
             >
               <CheckCircle2 className="w-10 h-10" />
-              <p className="text-xs font-black uppercase tracking-widest">Import Successful</p>
+              <div className="text-center">
+                <p className="text-xs font-black uppercase tracking-widest mb-2">Import Successful</p>
+                {summary && (
+                  <div className="grid grid-cols-3 gap-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[240px]">
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Orders</span>
+                      <span className="text-xs font-black">{summary.count}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Amount</span>
+                      <span className="text-xs font-black">₹{summary.amount.toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Exp. Profit</span>
+                      <span className="text-xs font-black">₹{summary.profit.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           ) : status === 'error' ? (
             <motion.div 

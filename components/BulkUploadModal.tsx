@@ -18,6 +18,7 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
   const [status, setStatus] = useState<'idle' | 'processing' | 'extracting' | 'review' | 'saving' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [extractedOrders, setExtractedOrders] = useState<(Partial<Order> & { isDuplicate?: boolean, skip?: boolean })[]>([]);
+  const [summary, setSummary] = useState<{ count: number, amount: number, profit: number } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -62,13 +63,21 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
       if (ordersToSave.length > 0) {
         await onOrdersAdded(ordersToSave);
       }
+
+      setSummary({
+        count: ordersToSave.length,
+        amount: ordersToSave.reduce((sum, o) => sum + (o.listingPrice || 0), 0),
+        profit: ordersToSave.reduce((sum, o) => sum + (o.profit || 0), 0)
+      });
+
       setStatus('success');
       setTimeout(() => {
         onClose();
         setStatus('idle');
         setFile(null);
         setExtractedOrders([]);
-      }, 2000);
+        setSummary(null);
+      }, 5000);
     } catch (err: any) {
       setError(err.message || 'Failed to save orders');
       setStatus('error');
@@ -210,7 +219,24 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
               </div>
               <div className="text-center">
                 <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Orders Saved Successfully!</p>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Your dashboard is being updated</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 mb-6">Your dashboard is being updated</p>
+                
+                {summary && (
+                  <div className="grid grid-cols-3 gap-4 bg-slate-50 p-6 rounded-[2rem] border border-slate-100 min-w-[320px]">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Orders</span>
+                      <span className="text-lg font-black text-slate-900">{summary.count}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount</span>
+                      <span className="text-lg font-black text-indigo-600">₹{summary.amount.toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Exp. Profit</span>
+                      <span className="text-lg font-black text-emerald-600">₹{summary.profit.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
