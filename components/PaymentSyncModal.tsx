@@ -80,6 +80,9 @@ export default function PaymentSyncModal({ onClose, onSuccess }: PaymentSyncModa
           // If status is Delivered, we mark it as Settled in our app
           if (liveStatus === 'DELIVERED') {
             update.status = 'Settled';
+          } else if (liveStatus === 'RETURN' || liveStatus === 'RTO') {
+            update.status = 'Returned';
+            update.returnType = liveStatus === 'RTO' ? 'Courier' : 'Customer';
           }
 
           return update;

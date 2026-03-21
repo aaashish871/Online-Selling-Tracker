@@ -364,10 +364,15 @@ const App: React.FC = () => {
       .filter(o => o.status === 'Returned' && o.bankSettled)
       .reduce((s, o) => s + (Number(o.lossAmount) || 0), 0);
     
+    // Calculate Potential Loss (sum of lossAmount where status is Returned but NOT yet bankSettled)
+    const potentialLoss = orders
+      .filter(o => o.status === 'Returned' && !o.bankSettled)
+      .reduce((s, o) => s + (Number(o.lossAmount) || 0), 0);
+    
     const rev = baseRev - customerLoss;
     const prof = baseProf - customerLoss;
     
-    return { rev, prof, customerLoss, count: orders.length };
+    return { rev, prof, customerLoss, potentialLoss, count: orders.length };
   }, [orders]);
 
   const monthlyData = useMemo(() => {
@@ -653,16 +658,16 @@ const App: React.FC = () => {
                 icon="🔄" 
               />
               <StatsCard 
-                label="Total Loss" 
-                value={`₹${orders.filter(o => o.status === 'Returned').reduce((sum, o) => sum + (o.lossAmount || 0), 0).toLocaleString()}`} 
+                label="Settled Loss" 
+                value={`₹${stats.customerLoss.toLocaleString()}`} 
                 color="bg-slate-800" 
                 icon="📉" 
               />
               <StatsCard 
-                label="Pending Claims" 
-                value={orders.filter(o => o.status === 'Returned' && o.claimStatus === 'Pending').length} 
-                color="bg-amber-500" 
-                icon="⏳" 
+                label="Potential Loss" 
+                value={`₹${stats.potentialLoss.toLocaleString()}`} 
+                color="bg-rose-500" 
+                icon="⚠️" 
               />
               <StatsCard 
                 label="Not Received" 
@@ -679,6 +684,14 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                     {filteredReturnedOrders.length} Returned Items Showing
                   </span>
+                </div>
+                <div className="hidden lg:flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Loss Tracking Tip</span>
+                    <p className="text-[9px] font-bold text-slate-600 leading-tight">
+                      Loss = <span className="text-rose-500">Shipping Charge</span> (if Customer Return) + <span className="text-rose-500">Unit Cost</span> (if Product Damaged/Lost).
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                   <div className="flex-1 md:flex-none">
@@ -738,6 +751,7 @@ const App: React.FC = () => {
                       <th className="px-4 py-4">Product</th>
                       <th className="px-4 py-4">Return Type</th>
                       <th className="px-4 py-4">Received Status</th>
+                      <th className="px-4 py-4">Settlement</th>
                       <th className="px-4 py-4">Loss Amount</th>
                       <th className="px-4 py-4 text-center">Bank Settled</th>
                       <th className="px-4 py-4">Claim Status</th>
@@ -783,12 +797,15 @@ const App: React.FC = () => {
                             <option value="Not Received">Not Received</option>
                           </select>
                         </td>
+                        <td className={`px-4 py-4 font-bold text-xs ${o.settledAmount < 0 ? 'text-rose-500' : 'text-slate-600'}`}>
+                          ₹{o.settledAmount}
+                        </td>
                         <td className="px-4 py-4 font-bold text-rose-500 text-xs">
                           <div className="flex items-center gap-1">
                             <span>₹</span>
                             <input 
                               type="number" 
-                              className="w-20 bg-transparent border-b border-slate-200 focus:border-indigo-500 outline-none"
+                              className="w-16 bg-transparent border-b border-slate-200 focus:border-indigo-500 outline-none"
                               value={o.lossAmount || 0}
                               onChange={async (e) => {
                                 const val = Number(e.target.value);
@@ -796,6 +813,22 @@ const App: React.FC = () => {
                                 await dbService.updateOrder({ ...o, lossAmount: val });
                               }}
                             />
+                            <button 
+                              onClick={async () => {
+                                const prod = inventory.find(i => i.id === o.productId);
+                                const cost = prod?.unitCost || 0;
+                                const shippingLoss = o.settledAmount < 0 ? Math.abs(o.settledAmount) : 0;
+                                const productLoss = o.receivedStatus === 'Not Received' ? cost : 0;
+                                const totalLoss = shippingLoss + productLoss;
+                                
+                                setOrders(prev => prev.map(item => item.id === o.id ? { ...item, lossAmount: totalLoss } : item));
+                                await dbService.updateOrder({ ...o, lossAmount: totalLoss });
+                              }}
+                              className="p-1 hover:bg-rose-50 rounded text-[8px] font-black uppercase tracking-tighter"
+                              title="Auto-calculate loss (Shipping + Product if not received)"
+                            >
+                              Auto
+                            </button>
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center">
