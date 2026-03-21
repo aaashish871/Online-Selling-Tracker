@@ -6,6 +6,7 @@ import StatsCard from './components/StatsCard.tsx';
 import OrderForm from './components/OrderForm.tsx';
 import InventoryForm from './components/InventoryForm.tsx';
 import BulkUploadModal from './components/BulkUploadModal.tsx';
+import StatusSyncModal from './components/StatusSyncModal.tsx';
 import PDFUpload from './components/PDFUpload.tsx';
 import { dbService } from './services/dbService.ts';
 import { getAIAnalysis } from './services/geminiService.ts';
@@ -39,6 +40,7 @@ const App: React.FC = () => {
 
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [isStatusSyncOpen, setIsStatusSyncOpen] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{ found: string[], deleted: number } | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -161,13 +163,60 @@ const App: React.FC = () => {
     }
   };
 
-  const handleOrdersExtracted = async (newOrders: Order[]) => {
-    setOrders(prev => [...newOrders, ...prev]);
+  const normalizeAllOrderIds = async () => {
+    if (orders.length === 0) return;
+    setIsCleaningUp(true);
     try {
-      await dbService.saveOrders(newOrders);
+      const affectedOrders = orders.filter(o => !o.id.endsWith('_1'));
+      if (affectedOrders.length === 0) {
+        alert("All order IDs are already normalized (end with _1).");
+        return;
+      }
+
+      console.log(`Normalizing ${affectedOrders.length} order IDs...`);
+      
+      let normalizedCount = 0;
+      let duplicateCount = 0;
+
+      for (const order of affectedOrders) {
+        const newId = order.id + '_1';
+        // Check if newId already exists in local state to avoid PK violation
+        const exists = orders.some(o => o.id === newId);
+        
+        if (exists) {
+          console.log(`Order ${newId} already exists. Deleting duplicate base ID ${order.id}.`);
+          await dbService.deleteOrder(order.id);
+          duplicateCount++;
+        } else {
+          console.log(`Renaming ${order.id} to ${newId}`);
+          await dbService.renameOrderId(order.id, newId);
+          normalizedCount++;
+        }
+      }
+
+      await loadData(true);
+      alert(`Normalization complete!\n- Renamed: ${normalizedCount}\n- Merged Duplicates: ${duplicateCount}`);
+    } catch (error: any) {
+      console.error("Normalization Error:", error);
+      alert("Normalization failed: " + (error.message || "Unknown error"));
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
+
+  const handleOrdersExtracted = async (newOrders: Order[]) => {
+    // Ensure all new orders have _1 suffix
+    const normalizedNewOrders = newOrders.map(o => ({
+      ...o,
+      id: o.id.endsWith('_1') ? o.id : `${o.id}_1`
+    }));
+
+    setOrders(prev => [...normalizedNewOrders, ...prev]);
+    try {
+      await dbService.saveOrders(normalizedNewOrders);
       await loadData(true);
     } catch (err) {
-      setOrders(prev => prev.filter(o => !newOrders.find(no => no.id === o.id)));
+      setOrders(prev => prev.filter(o => !normalizedNewOrders.find(no => no.id === o.id)));
       throw err;
     }
   };
@@ -275,8 +324,12 @@ const App: React.FC = () => {
         inv.name.toLowerCase() === ext.productName?.toLowerCase()
       );
 
+      // Ensure ID ends with _1
+      const baseId = ext.id || `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const finalId = baseId.endsWith('_1') ? baseId : `${baseId}_1`;
+
       const newOrder: Order = {
-        id: ext.id || `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: finalId,
         date: ext.date || new Date().toISOString().split('T')[0],
         productId: matchingItem?.id || 'manual-entry',
         productName: ext.productName || 'Unknown Product',
@@ -848,13 +901,23 @@ const App: React.FC = () => {
                   <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Order Management</h2>
                   <div className="flex items-center gap-4 mt-1">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filteredOrders.length} Records Showing</span>
-                    <button 
-                      onClick={() => setIsBulkUploadOpen(true)}
-                      className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline flex items-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                      Bulk Upload (PDF)
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setIsBulkUploadOpen(true)}
+                        className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                        Bulk Upload (PDF)
+                      </button>
+                      <div className="w-1 h-1 bg-slate-200 rounded-full"></div>
+                      <button 
+                        onClick={() => setIsStatusSyncOpen(true)}
+                        className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        Sync Status (Excel)
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -1097,6 +1160,31 @@ const App: React.FC = () => {
                     <button onClick={() => setCleanupResult(null)} className="mt-4 text-[9px] font-black text-slate-400 uppercase underline">Dismiss</button>
                   </div>
                 )}
+
+                <div className="pt-8 border-t border-slate-50 mt-8">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">ID Normalization</h4>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed mb-6">
+                    Ensure all Order IDs end with <span className="text-indigo-600 font-black">_1</span>. This will rename existing IDs or merge duplicates.
+                  </p>
+                  <button 
+                    onClick={normalizeAllOrderIds}
+                    disabled={isCleaningUp}
+                    className={`w-full py-4 font-black uppercase text-[10px] tracking-widest rounded-2xl border transition-all flex items-center justify-center gap-2 ${
+                      isCleaningUp 
+                        ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed' 
+                        : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
+                    }`}
+                  >
+                    {isCleaningUp ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Normalizing IDs...
+                      </>
+                    ) : (
+                      'Normalize All Order IDs (_1)'
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1180,6 +1268,12 @@ const App: React.FC = () => {
         onOrdersAdded={handleBulkOrdersAdded}
         existingOrders={orders}
       />
+      {isStatusSyncOpen && (
+        <StatusSyncModal 
+          onClose={() => setIsStatusSyncOpen(false)}
+          onSuccess={() => loadData(true)}
+        />
+      )}
     </div>
   );
 };

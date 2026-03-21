@@ -228,5 +228,38 @@ export const dbService = {
       const { error } = await supabase!.from('osot_orders').delete().in('id', ids);
       if (error) throw error;
     });
+  },
+
+  async updateOrderStatuses(updates: { id: string, status: string }[]): Promise<void> {
+    if (!supabase || updates.length === 0) return;
+    const user = await this.getCurrentUser();
+    if (!user) return;
+
+    return this.retryFetch(async () => {
+      // For each update, we update the status of the order matching the ID and user_id
+      for (const update of updates) {
+        const { error } = await supabase!
+          .from('osot_orders')
+          .update({ status: update.status })
+          .eq('id', update.id)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      }
+    });
+  },
+
+  async renameOrderId(oldId: string, newId: string): Promise<void> {
+    if (!supabase) return;
+    const user = await this.getCurrentUser();
+    if (!user) return;
+
+    return this.retryFetch(async () => {
+      const { error } = await supabase!
+        .from('osot_orders')
+        .update({ id: newId })
+        .eq('id', oldId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+    });
   }
 };

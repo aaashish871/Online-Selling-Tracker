@@ -37,8 +37,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ onAdd, inventory, statuses }) => 
       const cost = selectedProduct.unitCost;
       const profit = settled - cost;
 
+      // Ensure ID ends with _1
+      const finalId = formData.id.endsWith('_1') ? formData.id : `${formData.id}_1`;
+
       const newOrder: Order = {
-        id: formData.id,
+        id: finalId,
         date: formData.date,
         productId: formData.productId,
         productName: selectedProduct.name,
