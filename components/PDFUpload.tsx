@@ -20,7 +20,8 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
   const [progress, setProgress] = useState(0);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [duplicateOrders, setDuplicateOrders] = useState<{ new: Order, existing: Order }[]>([]);
-  const [summary, setSummary] = useState<{ count: number, amount: number, profit: number } | null>(null);
+  const [updatesAvailable, setUpdatesAvailable] = useState<{ new: Order, existing: Order }[]>([]);
+  const [summary, setSummary] = useState<{ count: number, amount: number, profit: number, updated?: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,22 +87,32 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
         };
       });
 
-      // 4. Check for duplicates
+      // 4. Check for duplicates and updates
       const duplicates: { new: Order, existing: Order }[] = [];
+      const updates: { new: Order, existing: Order }[] = [];
       const nonDuplicates: Order[] = [];
 
       newOrders.forEach(order => {
         const existing = existingOrders.find(o => o.id === order.id);
         if (existing) {
-          duplicates.push({ new: order, existing });
+          // Check if there's a meaningful update (status change or settlement amount)
+          const isStatusUpdate = order.status !== existing.status;
+          const isSettlementUpdate = order.settledAmount !== existing.settledAmount && order.settledAmount > 0;
+          
+          if (isStatusUpdate || isSettlementUpdate) {
+            updates.push({ new: order, existing });
+          } else {
+            duplicates.push({ new: order, existing });
+          }
         } else {
           nonDuplicates.push(order);
         }
       });
 
-      if (duplicates.length > 0) {
+      if (duplicates.length > 0 || updates.length > 0) {
         setPendingOrders(nonDuplicates);
         setDuplicateOrders(duplicates);
+        setUpdatesAvailable(updates);
         setStatus('duplicate-check');
         setIsProcessing(false);
         return;
@@ -136,22 +147,37 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
     }
   };
 
-  const handleDuplicateDecision = async (uploadDuplicates: boolean) => {
+  const handleDuplicateDecision = async (mode: 'new-only' | 'all' | 'sync-updates') => {
     setIsProcessing(true);
     setStatus('saving');
     setProgress(80);
     
     try {
-      const ordersToUpload = uploadDuplicates 
-        ? [...pendingOrders, ...duplicateOrders.map(d => d.new)]
-        : pendingOrders;
+      let ordersToUpload: Order[] = [];
+      let updatedCount = 0;
+
+      if (mode === 'new-only') {
+        ordersToUpload = pendingOrders;
+      } else if (mode === 'all') {
+        ordersToUpload = [...pendingOrders, ...duplicateOrders.map(d => d.new), ...updatesAvailable.map(u => u.new)];
+      } else if (mode === 'sync-updates') {
+        // Only upload new ones AND update existing ones with new data
+        ordersToUpload = [...pendingOrders, ...updatesAvailable.map(u => ({
+          ...u.existing,
+          status: u.new.status,
+          settledAmount: u.new.settledAmount > 0 ? u.new.settledAmount : u.existing.settledAmount,
+          profit: u.new.settledAmount > 0 ? (u.new.settledAmount - (u.existing.listingPrice * 0.1)) : u.existing.profit // Rough profit calc if updated
+        }))];
+        updatedCount = updatesAvailable.length;
+      }
 
       if (ordersToUpload.length > 0) {
         await onOrdersExtracted(ordersToUpload);
       }
       
       setSummary({
-        count: ordersToUpload.length,
+        count: ordersToUpload.length - updatedCount,
+        updated: updatedCount,
         amount: ordersToUpload.reduce((sum, o) => sum + o.listingPrice, 0),
         profit: ordersToUpload.reduce((sum, o) => sum + o.profit, 0)
       });
@@ -163,6 +189,7 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
         setIsProcessing(false);
         setPendingOrders([]);
         setDuplicateOrders([]);
+        setUpdatesAvailable([]);
         setSummary(null);
       }, 5000);
     } catch (err: any) {
@@ -245,15 +272,21 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
             >
               <CheckCircle2 className="w-10 h-10" />
               <div className="text-center">
-                <p className="text-xs font-black uppercase tracking-widest mb-2">Import Successful</p>
+                <p className="text-xs font-black uppercase tracking-widest mb-2">
+                  {summary?.updated ? 'Sync & Import Successful' : 'Import Successful'}
+                </p>
                 {summary && (
-                  <div className="grid grid-cols-3 gap-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[240px]">
+                  <div className="grid grid-cols-2 gap-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[240px]">
                     <div className="flex flex-col">
-                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Orders</span>
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">New Orders</span>
                       <span className="text-xs font-black">{summary.count}</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Amount</span>
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Updated</span>
+                      <span className="text-xs font-black">{summary.updated || 0}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-emerald-700 uppercase tracking-tighter">Total Amount</span>
                       <span className="text-xs font-black">₹{summary.amount.toLocaleString()}</span>
                     </div>
                     <div className="flex flex-col">
@@ -288,49 +321,73 @@ const PDFUpload: React.FC<PDFUploadProps> = ({ onOrdersExtracted, inventory, sta
               className="flex flex-col items-center gap-4 w-full"
             >
               <div className="text-center">
-                <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
-                <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Duplicate Orders Found</h4>
+                <div className="flex justify-center gap-2 mb-2">
+                  {updatesAvailable.length > 0 && <CheckCircle2 className="w-8 h-8 text-indigo-500" />}
+                  {duplicateOrders.length > 0 && <AlertCircle className="w-8 h-8 text-amber-500" />}
+                </div>
+                <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                  {updatesAvailable.length > 0 ? 'Status Updates Found' : 'Duplicate Orders Found'}
+                </h4>
                 <p className="text-[10px] font-bold text-slate-500 mt-1">
-                  {duplicateOrders.length} order(s) already exist in your records.
+                  {updatesAvailable.length > 0 && `${updatesAvailable.length} order(s) have new status/payment info.`}
+                  {duplicateOrders.length > 0 && ` ${duplicateOrders.length} order(s) are exact duplicates.`}
                 </p>
               </div>
 
               <div className="w-full max-h-48 overflow-y-auto space-y-2 px-2 custom-scrollbar">
-                {duplicateOrders.map((dup, idx) => (
-                  <div key={idx} className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex flex-col gap-2">
+                {updatesAvailable.map((upd, idx) => (
+                  <div key={`upd-${idx}`} className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col gap-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">Order ID: {dup.new.id}</span>
-                      <span className="text-[8px] font-bold text-amber-600 bg-white px-1.5 py-0.5 rounded border border-amber-100">DUPLICATE</span>
+                      <span className="text-[9px] font-black text-indigo-700 uppercase tracking-widest">Order ID: {upd.new.id}</span>
+                      <span className="text-[8px] font-bold text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-indigo-100">UPDATE AVAILABLE</span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">New Data</p>
-                        <p className="text-[10px] font-bold text-slate-700 truncate">{dup.new.productName}</p>
-                        <p className="text-[10px] font-bold text-indigo-600">₹{dup.new.listingPrice}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Report Data</p>
+                        <p className="text-[10px] font-bold text-indigo-700">{upd.new.status}</p>
+                        <p className="text-[10px] font-bold text-indigo-600">₹{upd.new.settledAmount}</p>
                       </div>
                       <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Existing Data</p>
-                        <p className="text-[10px] font-bold text-slate-700 truncate">{dup.existing.productName}</p>
-                        <p className="text-[10px] font-bold text-indigo-600">₹{dup.existing.listingPrice}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Current Portal</p>
+                        <p className="text-[10px] font-bold text-slate-500">{upd.existing.status}</p>
+                        <p className="text-[10px] font-bold text-slate-500">₹{upd.existing.settledAmount}</p>
                       </div>
+                    </div>
+                  </div>
+                ))}
+                {duplicateOrders.map((dup, idx) => (
+                  <div key={`dup-${idx}`} className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex flex-col gap-2 opacity-60">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">Order ID: {dup.new.id}</span>
+                      <span className="text-[8px] font-bold text-amber-600 bg-white px-1.5 py-0.5 rounded border border-amber-100">EXACT MATCH</span>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="flex gap-3 w-full mt-2">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleDuplicateDecision(false); }}
-                  className="flex-1 py-3 bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-slate-200 transition-all"
-                >
-                  Skip Duplicates
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleDuplicateDecision(true); }}
-                  className="flex-1 py-3 bg-amber-500 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-amber-600 shadow-lg shadow-amber-200 transition-all"
-                >
-                  Upload All
-                </button>
+              <div className="flex flex-col gap-2 w-full mt-2">
+                {updatesAvailable.length > 0 && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDuplicateDecision('sync-updates'); }}
+                    className="w-full py-3 bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
+                  >
+                    Sync Statuses & Import New
+                  </button>
+                )}
+                <div className="flex gap-2 w-full">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDuplicateDecision('new-only'); }}
+                    className="flex-1 py-3 bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-slate-200 transition-all"
+                  >
+                    Only New Orders
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDuplicateDecision('all'); }}
+                    className="flex-1 py-3 bg-amber-500 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-amber-600 transition-all"
+                  >
+                    Force All
+                  </button>
+                </div>
               </div>
               <button 
                 onClick={(e) => { e.stopPropagation(); setStatus('idle'); setIsProcessing(false); }}

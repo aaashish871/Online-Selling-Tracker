@@ -58,7 +58,7 @@ export const extractOrdersFromImages = async (base64Images: string[]): Promise<P
     Extract order details from the provided invoice images. 
     Each image contains one or more orders. 
     For each order, extract:
-    - Order ID (Order No / Purchase Order No)
+    - Order ID (Order No / Purchase Order No). IMPORTANT: Capture the FULL Order ID including any suffixes like _1, _2, etc. (e.g., 258818365459503424_1).
     - Order Date (YYYY-MM-DD format)
     - Product Name (Description)
     - Listing Price (Total amount)

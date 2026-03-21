@@ -9,6 +9,7 @@ import BulkUploadModal from './components/BulkUploadModal.tsx';
 import PDFUpload from './components/PDFUpload.tsx';
 import { dbService } from './services/dbService.ts';
 import { getAIAnalysis } from './services/geminiService.ts';
+import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
@@ -38,6 +39,8 @@ const App: React.FC = () => {
 
   const [isInvFormOpen, setIsInvFormOpen] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{ found: string[], deleted: number } | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -115,18 +118,23 @@ const App: React.FC = () => {
 
   const loadData = async (silent = false) => {
     if (!user) return;
+    console.log(`Loading data (silent: ${silent})...`);
     if (!silent) setIsLoading(true);
     try {
+      console.log("Fetching orders and inventory...");
       const [fetchedOrders, fetchedInventory] = await Promise.all([
         dbService.getOrders(),
         dbService.getInventory()
       ]);
+      console.log(`Fetched ${fetchedOrders?.length || 0} orders and ${fetchedInventory?.length || 0} inventory items.`);
       setOrders(fetchedOrders || []);
       setInventory(fetchedInventory || []);
       if (isAdmin) {
+        console.log("Fetching user profiles...");
         const allProfiles = await dbService.getAllProfiles();
         setProfiles(allProfiles.filter(p => p.email !== user.email));
       }
+      console.log("Data load successful.");
     } catch (error: any) {
       console.error("Data load error:", error);
     } finally {
@@ -189,6 +197,70 @@ const App: React.FC = () => {
       alert("Sharing failed: " + e.message);
     } finally {
       setIsSharingData(false);
+    }
+  };
+
+  const cleanupDuplicateOrders = async () => {
+    if (isCleaningUp) return;
+    setIsCleaningUp(true);
+    setCleanupResult(null);
+    
+    try {
+      console.log("Starting cleanup check. Fetching fresh data...");
+      const freshOrders = await dbService.getOrders();
+      setOrders(freshOrders);
+      
+      const ordersToDelete: string[] = [];
+      const orderIds = freshOrders.map(o => o.id.trim());
+      
+      freshOrders.forEach(order => {
+        const currentId = order.id.trim();
+        const hasSuffixedVersion = orderIds.some(id => id !== currentId && id.startsWith(`${currentId}_`));
+        if (hasSuffixedVersion) {
+          if (!ordersToDelete.includes(order.id)) {
+            ordersToDelete.push(order.id);
+          }
+        }
+      });
+
+      console.log("Found duplicates to delete:", ordersToDelete);
+
+      if (ordersToDelete.length === 0) {
+        setCleanupResult({ found: [], deleted: 0 });
+        setIsCleaningUp(false);
+        return;
+      }
+
+      // Instead of window.confirm, we set the result to show the confirmation UI
+      setCleanupResult({ found: ordersToDelete, deleted: 0 });
+    } catch (error: any) {
+      console.error("Cleanup Scan Error:", error);
+      alert("Scan failed: " + error.message);
+      setIsCleaningUp(false);
+    }
+  };
+
+  const executeCleanup = async () => {
+    if (!cleanupResult || cleanupResult.found.length === 0) return;
+    setIsCleaningUp(true);
+    
+    try {
+      const idsToDelete = cleanupResult.found;
+      console.log(`Executing cleanup for ${idsToDelete.length} orders:`, idsToDelete);
+      
+      // Use the plural deleteOrders for better performance and reliability
+      await dbService.deleteOrders(idsToDelete);
+      
+      console.log("Deletion successful, reloading data...");
+      await loadData(true);
+      
+      setCleanupResult({ found: [], deleted: idsToDelete.length });
+      console.log("Cleanup process complete.");
+    } catch (error: any) {
+      console.error("Execution Error:", error);
+      alert("Cleanup failed: " + (error.message || "Unknown error"));
+    } finally {
+      setIsCleaningUp(false);
     }
   };
 
@@ -953,6 +1025,80 @@ const App: React.FC = () => {
 
         {view === 'settings' && (
           <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <h3 className="text-lg font-black text-slate-900 mb-6 uppercase tracking-tight">Database Maintenance</h3>
+              <div className="space-y-4">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                  Clean up duplicate order IDs (e.g., removing '123' if '123_1' exists).
+                </p>
+                
+                {!cleanupResult ? (
+                  <button 
+                    onClick={cleanupDuplicateOrders}
+                    disabled={isCleaningUp}
+                    className={`w-full py-4 font-black uppercase text-[10px] tracking-widest rounded-2xl border transition-all flex items-center justify-center gap-2 ${
+                      isCleaningUp 
+                        ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed' 
+                        : 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100'
+                    }`}
+                  >
+                    {isCleaningUp ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Scanning Database...
+                      </>
+                    ) : (
+                      'Scan for Duplicate Order IDs'
+                    )}
+                  </button>
+                ) : cleanupResult.deleted > 0 ? (
+                  <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-center animate-in zoom-in-95">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                    <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Cleanup Successful!</p>
+                    <p className="text-[10px] font-bold text-emerald-600 mt-1">Removed {cleanupResult.deleted} duplicate base entries.</p>
+                    <button onClick={() => setCleanupResult(null)} className="mt-4 text-[9px] font-black text-emerald-700 uppercase underline">Dismiss</button>
+                  </div>
+                ) : cleanupResult.found.length > 0 ? (
+                  <div className="p-6 bg-rose-50 rounded-2xl border border-rose-100 animate-in slide-in-from-top-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <AlertCircle className="w-6 h-6 text-rose-500" />
+                      <h4 className="text-xs font-black text-rose-900 uppercase tracking-tight">Confirm Deletion</h4>
+                    </div>
+                    <p className="text-[10px] font-bold text-rose-700 mb-4">
+                      Found {cleanupResult.found.length} base IDs that have suffixed versions (e.g., _1). These will be removed:
+                    </p>
+                    <div className="max-h-32 overflow-y-auto mb-6 space-y-1 custom-scrollbar pr-2">
+                      {cleanupResult.found.map(id => (
+                        <div key={id} className="text-[9px] font-mono font-bold text-rose-500 bg-white/50 px-2 py-1 rounded border border-rose-100">{id}</div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setCleanupResult(null)}
+                        className="flex-1 py-3 text-slate-400 font-black text-[10px] uppercase tracking-widest"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={executeCleanup}
+                        disabled={isCleaningUp}
+                        className="flex-1 py-3 bg-rose-600 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg shadow-rose-200 disabled:opacity-50"
+                      >
+                        {isCleaningUp ? 'Deleting...' : 'Confirm & Delete'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                    <CheckCircle2 className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Database is Clean</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-1">No duplicate base IDs found.</p>
+                    <button onClick={() => setCleanupResult(null)} className="mt-4 text-[9px] font-black text-slate-400 uppercase underline">Dismiss</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <h3 className="text-lg font-black text-slate-900 mb-6 uppercase tracking-tight">Business Configuration</h3>
               <div className="space-y-6">
