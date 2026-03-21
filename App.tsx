@@ -508,6 +508,7 @@ const App: React.FC = () => {
                   onOrdersExtracted={handleOrdersExtracted}
                   inventory={inventory}
                   statuses={statuses}
+                  existingOrders={orders}
                 />
               </div>
             </div>
@@ -1030,6 +1031,7 @@ const App: React.FC = () => {
         isOpen={isBulkUploadOpen} 
         onClose={() => setIsBulkUploadOpen(false)} 
         onOrdersAdded={handleBulkOrdersAdded}
+        existingOrders={orders}
       />
     </div>
   );

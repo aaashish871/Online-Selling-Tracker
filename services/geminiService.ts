@@ -3,8 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Order } from "../types.ts";
 
 export const getAIAnalysis = async (orders: Order[]) => {
-  // Safety check for environment variable access
-  const apiKey = typeof process !== 'undefined' ? (process.env.GEMINI_API_KEY || process.env.API_KEY || '') : '';
+  // Use process.env directly to allow Vite's define replacement to work
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
   const ai = new GoogleGenAI({ apiKey: apiKey as string });
   
   const orderSummary = orders.map(o => ({
@@ -51,7 +51,7 @@ export const getAIAnalysis = async (orders: Order[]) => {
 };
 
 export const extractOrdersFromImages = async (base64Images: string[]): Promise<Partial<Order>[]> => {
-  const apiKey = typeof process !== 'undefined' ? (process.env.GEMINI_API_KEY || process.env.API_KEY || '') : '';
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
   const ai = new GoogleGenAI({ apiKey: apiKey as string });
 
   const prompt = `

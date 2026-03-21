@@ -10,13 +10,14 @@ interface BulkUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOrdersAdded: (orders: Partial<Order>[]) => Promise<void>;
+  existingOrders: Order[];
 }
 
-const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOrdersAdded }) => {
+const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOrdersAdded, existingOrders }) => {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'processing' | 'extracting' | 'review' | 'saving' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [extractedOrders, setExtractedOrders] = useState<Partial<Order>[]>([]);
+  const [extractedOrders, setExtractedOrders] = useState<(Partial<Order> & { isDuplicate?: boolean, skip?: boolean })[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -36,7 +37,16 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
       setStatus('extracting');
       const orders = await extractOrdersFromImages(images);
       
-      setExtractedOrders(orders);
+      const ordersWithDupCheck = orders.map(order => {
+        const existing = existingOrders.find(o => o.id === order.id);
+        return {
+          ...order,
+          isDuplicate: !!existing,
+          skip: !!existing // Default to skip if duplicate
+        };
+      });
+
+      setExtractedOrders(ordersWithDupCheck);
       setStatus('review');
     } catch (err: any) {
       console.error(err);
@@ -48,7 +58,10 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
   const handleSave = async () => {
     try {
       setStatus('saving');
-      await onOrdersAdded(extractedOrders);
+      const ordersToSave = extractedOrders.filter(o => !o.skip);
+      if (ordersToSave.length > 0) {
+        await onOrdersAdded(ordersToSave);
+      }
       setStatus('success');
       setTimeout(() => {
         onClose();
@@ -142,23 +155,44 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, onOr
                 </button>
               </div>
               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {extractedOrders.map((order, idx) => (
-                  <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
-                        <FileText className="w-5 h-5 text-slate-400" />
+                {extractedOrders.map((order, idx) => {
+                  const existing = existingOrders.find(o => o.id === order.id);
+                  return (
+                    <div key={idx} className={`p-4 rounded-2xl border flex justify-between items-center transition-all ${order.isDuplicate ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            checked={!order.skip}
+                            onChange={() => {
+                              setExtractedOrders(prev => prev.map((o, i) => i === idx ? { ...o, skip: !o.skip } : o));
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </div>
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                          <FileText className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-900 truncate max-w-[200px]">{order.productName}</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            ID: {order.id} • SKU: {order.sku}
+                          </p>
+                          {order.isDuplicate && existing && (
+                            <div className="mt-1 flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black text-amber-600 uppercase tracking-widest">⚠️ ALREADY EXISTS IN RECORDS</span>
+                              <span className="text-[8px] font-bold text-slate-400 uppercase">Existing: {existing.productName} • ₹{existing.listingPrice}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs font-black text-slate-900 truncate max-w-[200px]">{order.productName}</p>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">ID: {order.id} • SKU: {order.sku}</p>
+                      <div className="text-right">
+                        <p className="text-xs font-black text-indigo-600">₹{order.listingPrice}</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{order.date}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-black text-indigo-600">₹{order.listingPrice}</p>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{order.date}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <button 
                 onClick={handleSave}
