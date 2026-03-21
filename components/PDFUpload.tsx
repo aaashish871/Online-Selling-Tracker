@@ -4,7 +4,7 @@ import { Order, InventoryItem } from '../types.ts';
 import { convertPdfToImages } from '../services/pdfService.ts';
 import { extractOrdersFromImages } from '../services/geminiService.ts';
 import { FileUp, Loader2, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface PDFUploadProps {
   onOrdersExtracted: (orders: Order[]) => Promise<void>;

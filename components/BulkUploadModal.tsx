@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { convertPdfToImages } from '../services/pdfService.ts';
 import { extractOrdersFromImages } from '../services/geminiService.ts';
 import { Order } from '../types.ts';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 interface BulkUploadModalProps {
